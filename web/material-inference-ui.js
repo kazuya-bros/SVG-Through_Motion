@@ -1,0 +1,20 @@
+export function installMaterialInference({state,save,adopt,request,run,message,checkpoint,render}){
+ const host=document.createElement('section');host.className='material-inference';host.innerHTML=`<details><summary>See-Throughで分割・奥行きを作る</summary><p id="inferenceReady" class="tiny">実行環境を確認しています…</p><div class="inference-settings"><label>Seed<input id="inferenceSeed" type="number" min="0" max="2147483647" value="42"></label><label>解像度<select id="inferenceResolution"><option value="512">512（動作確認）</option><option value="768" selected>768</option><option value="1024">1024</option><option value="1280">1280</option></select></label><label>ステップ<input id="inferenceSteps" type="number" min="1" max="60" value="30"></label><button id="splitMaterial" disabled>分割候補を追加</button><button id="depthMaterial" disabled>補正後の奥行きを作る</button><button id="cancelInference" hidden>生成を中止</button></div><p class="tiny">分割は元の入力画像から試します。奥行きは、現在の補正済みパーツから作ります。</p><label class="check"><input id="autoMaterialDepth" type="checkbox" checked>SVGへ進む前に、必要なら奥行きを生成する</label><div id="materialCandidates"></div></details><p id="depthState" class="tiny"></p>`;
+ document.querySelector('.material-heading').after(host);const $=id=>document.getElementById(id);let ready=false,jobId=null,busy=false,activeJobs=[];
+ function refresh(isBusy=busy){busy=isBusy;const s=state();if(!s)return;if(!busy&&!jobId){const pending=activeJobs.find(j=>j.material_id===s.id);if(pending){activeJobs=activeJobs.filter(j=>j!==pending);queueMicrotask(()=>run(()=>watch(pending.id,s))());}}$('splitMaterial').disabled=$('depthMaterial').disabled=!ready||!!jobId||busy;$('depthState').textContent=s.depth?(s.depthCurrent?'補正済みパーツの奥行きを生成済みです。':'補正で形や構成が変わっています。奥行きを更新してください。'):'奥行き未生成：役割による動き付けと、パーツごとの奥行き調整を使えます。';$('materialCandidates').replaceChildren(...(s.candidates||[]).filter(c=>c.parts.some(id=>s.layers.some(p=>p.id===id))).map(c=>{const b=document.createElement('button');b.textContent='Seed '+c.seed+' の候補一式を使う';b.disabled=!!jobId||busy;b.onclick=()=>{checkpoint();const ids=new Set(c.parts);for(const p of s.layers)if(!p.locked)p.visible=ids.has(p.id);for(const p of s.layers.filter(p=>p.visible&&p.locked)){let owner=p;const seen=new Set();while(owner.parent&&!seen.has(owner.id)){seen.add(owner.id);owner=s.layers.find(v=>v.id===owner.parent);if(!owner)break;owner.visible=true;}}render();message('候補を採用しました。ロックしたパーツは維持しています。');};return b;}));}
+
+ async function generate(operation){
+  await save();const s=state();const result=await request('/api/material-inference/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({material_id:s.id,revision:s.revision,operation,seed:Number($('inferenceSeed').value),resolution:Number($('inferenceResolution').value),steps:Number($('inferenceSteps').value)})});
+  await watch(result.jobId,s);
+ }
+ async function watch(id,s){
+  jobId=id;$('cancelInference').hidden=false;refresh();
+  try{for(;;){const job=await request('/api/material-inference/jobs/'+jobId);message(job.message);if(job.state==='done'){await adopt(await request('/api/materials/'+s.id));return;}if(job.state==='error')throw Error(job.message);if(job.state==='cancelled')throw Error('生成を中止しました。素材の補正を続けられます。');await new Promise(r=>setTimeout(r,1000));}}
+  finally{jobId=null;$('cancelInference').hidden=true;refresh();}
+ }
+ for(const [id,operation] of [['splitMaterial','split'],['depthMaterial','depth']])$(id).onclick=run(()=>generate(operation));
+
+ $('cancelInference').onclick=async()=>{try{if(jobId){await request('/api/material-inference/jobs/'+jobId+'/cancel',{method:'POST'});message('生成の中止を待っています…');}}catch(e){message(e.message,true);}};
+ const availability=request('/api/material-inference/status').then(value=>{ready=value.ready;activeJobs=value.activeJobs||[];$('inferenceReady').textContent=ready?'PachiPakuGenの準備済み環境を利用できます。追加のモデル取得はありません。':value.message;refresh();}).catch(e=>{$('inferenceReady').textContent=e.message;});
+ return {refresh,async ensureDepth(){await availability;const s=state();if(ready&&$('autoMaterialDepth').checked&&!s.depthCurrent&&s.layers.some(p=>p.tag==='face'&&p.visible))await generate('depth');}};
+}

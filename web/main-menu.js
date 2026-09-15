@@ -16,6 +16,7 @@ export function returnToMenu(saved){
  location.assign(id?'/?saved='+id:'/');
 }
 export function installMainMenu({openFile}){
+ const prepare=document.createElement('a');prepare.href='/web/materials.html';prepare.className='material-entry-link';prepare.textContent='パーツを準備・補正する';prepare.style.cssText='display:inline-block;margin:12px 0;padding:12px 20px;border:1px solid #cbd5e7;border-radius:10px;color:#415ba5;background:white;text-decoration:none;font-weight:600';document.getElementById('startOwn')?.parentElement.after(prepare);
  const $=id=>document.getElementById(id),query=new URLSearchParams(location.search);
  const choices=readSaved(),id=query.get('saved');
  if(/^[a-f0-9]{32}$/.test(id||'')&&!choices.some(p=>savedId(p.url)===id))choices.unshift({url:`/api/exports/${id}/svg-through-motion.project.json`,name:'保存したキャラクター'});

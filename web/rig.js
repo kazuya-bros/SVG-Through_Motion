@@ -2,6 +2,7 @@ import {secondaryKind,secondaryMesh,secondaryPoint} from './secondary-motion.js'
 import {normalizeDepth,depthHairPoint} from './depth-motion.js';
 import {earDeformPart,naturalEarPoint} from './natural-ears.js';
 import {earEnabled} from './idle-expression.js';
+import {attachmentOwner,attachmentOffset} from './attachments.js';
 // One continuous deformation field for preview, frame exports, and vector meshes.
 import {normalizedSpring,rootedWave} from './pachipaku-motion.js?v=voice-2';
 import {blendStrands} from './hair-strands.js';
@@ -25,12 +26,17 @@ export function normalizeRig(r={},p) {
 const groupsCache=new WeakMap();
 export function rigGroups(p) {
   if(p.renderGroup||p.deformGroup)return null;
-  const localEars=p.parts.some(v=>v.visible&&(earEnabled(v)||v.role==='tail'||secondaryKind(v)));
+  const localEars=p.parts.some(v=>v.visible&&(earEnabled(v)||v.role==='tail'||secondaryKind(v)||v.followPart||v.attachmentDepth));
   if(!localEars&&(!p.rig?.segmented||(p.rig.seamWeights&&!p.settings?.independentHair)||p.rig.seamPending))return null;
-  const key=p.parts.map(x=>x.id+':'+(x.deformGroup||'core')+':'+x.role+':'+x.visible+':'+facePart(x)+':'+earEnabled(x)+':'+!!x.faceBase).join('|');
+  const key=p.parts.map(x=>x.id+':'+(x.deformGroup||'core')+':'+x.role+':'+x.visible+':'+facePart(x)+':'+earEnabled(x)+':'+!!x.faceBase+':'+(x.followPart||'')+':'+(x.attachmentDepth||0)).join('|');
   if(groupsCache.get(p)?.key===key)return groupsCache.get(p).groups;
   const groups=[];
   for(const part of p.parts){const kind=part.deformGroup||'core';let last=groups.at(-1);
+    if(part.followPart||part.attachmentDepth){
+      const owner=attachmentOwner(part,p.parts),group={...p,renderGroup:true,motionParts:p.parts,parts:[part],deformGroup:owner.deformGroup||'core',attachmentOwner:owner,attachmentPart:part};
+      Object.defineProperty(group,'settings',{get:()=>({...p.settings,background:'transparent'})});Object.defineProperty(group,'rig',{get:()=>p.rig});groups.push(group);continue;
+    }
+    if(last?.attachmentOwner)last=null;
     if(!last||last.deformGroup!==kind||facePart(last.parts[0])!==facePart(part)||earEnabled(part)||earEnabled(last.parts[0])||secondaryMesh(part)||secondaryMesh(last.parts[0])||!!last.parts[0].faceBase!==!!part.faceBase){last={...p,renderGroup:true,motionParts:p.parts,chestSeparated:p.parts.some(p=>p.visible&&p.role==='chest'),deformGroup:kind,parts:[]};Object.defineProperty(last,'settings',{get:()=>({...p.settings,background:'transparent'})});Object.defineProperty(last,'rig',{get:()=>p.rig});groups.push(last);}
     last.parts.push(part);
   }
@@ -51,6 +57,10 @@ function hairWeight(x,y,p,r) {
   return (a[iy*n+ix]*(1-fx)+a[iy*n+ix+1]*fx)*(1-fy)+(a[(iy+1)*n+ix]*(1-fx)+a[(iy+1)*n+ix+1]*fx)*fy;
 }
 export function warpPoint(x,y,p,pose) {
+  if(p.attachmentOwner){
+    const local={...p,parts:[p.attachmentOwner],attachmentOwner:null},point=warpPoint(x,y,local,pose),offset=attachmentOffset(p.attachmentPart,p,pose);
+    return [point[0]+offset[0],point[1]+offset[1]];
+  }
   if(pose.neckPivot&&p.rig)p={...p,rig:{...p.rig,neckX:clamp(pose.neckPivot.x,0,p.width),neckY:clamp(pose.neckPivot.y,0,p.height)}};
   [x,y]=chestPoint(x,y,p,pose);
   [x,y]=naturalEarPoint(x,y,p,pose);

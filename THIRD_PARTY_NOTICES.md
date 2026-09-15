@@ -24,3 +24,11 @@ Further changes: partition fields are blended into one shared mesh to keep cut b
 September 2026 editor update: front and back hair expose separate spring/wave method, amplitude and integer cycle settings. Editor projects use independent paint-order groups (`independentHair`) so a hair field no longer deforms the face or the other hair group; legacy shared-field projects remain renderable. Stable head motion uses a fixed neck blend, a relative head/body rotation, an 8-degree head range and a 6-pixel nod range. The spring and wave options remain local loop-friendly adaptations of the credited algorithms, not exact upstream solvers.
 
 Standalone SVG performance update: animated SVG export now preserves intact vector parts and uses rigid character motion, root-pinned hair shear, and shoulder rotation with the existing loop responses. It no longer duplicates artwork across triangle clips. Canvas/video retain the mesh deformation; their fine bending differs from the lightweight SVG output. Constant SVG channels are emitted as static attributes.
+# PachiPakuGen 素材準備工程の移植（2026-09-15）
+
+`studio/materials.py` は [kazuya-bros/PachiPakuGen](https://github.com/kazuya-bros/PachiPakuGen) の
+`BaseEditorPersistedState`、`BaseEditorLayerPatch`、`transform_extracted_part` を参照・適応したものです。
+MIT License。元実装のレイヤー順・有効状態・不透明度・追加補修・非破壊変換というデータ設計を、
+Python/PillowとHTTP APIに移植し、版管理・所属・Depth調整・SVG受け渡しを追加しています。
+画像の拡縮は全体中心基準からパーツ原点基準へ変更しています。
+PachiPakuGenのソース・モデル全体を同梱する変更ではありません。

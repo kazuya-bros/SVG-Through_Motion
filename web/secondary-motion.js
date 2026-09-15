@@ -23,9 +23,13 @@ export function secondaryConfig(part,project){
 }
 export function secondaryRigid(part,pose,project){
  const kind=part.faceOverlay?'brow':secondaryKind(part),c=secondaryConfig(part,project);
+ if(kind==='brow'&&part.earMotion!==true&&!/^ear-[lr]$/.test(part.role)){
+  const role=part.faceOverlay||part.role,side=role.endsWith('-r')?'R':'L',value=clamp(pose['brow'+side]??0,-1,1),amount=Math.min(6,project.height*.006);
+  const speech=c.enabled?-Math.min(4,project.height*.004)*c.amount/100*smooth(pose.mouth||0):0;
+  return {rotation:value*(side==='L'?-5:5)||0,y:-value*amount+speech||0};
+ }
  if(!c.enabled||part.earMotion===true||/^ear-[lr]$/.test(part.role))return {rotation:0,y:0};
  const a=c.amount/100,phase=(pose.secondaryPhase??pose.hairPhase??0)*c.cycles;
- if(kind==='brow')return {rotation:0,y:-Math.min(4,project.height*.004)*a*smooth(pose.mouth||0)||0};
  if(pose.secondaryPhase===undefined&&pose.hairPhase===undefined)return {rotation:0,y:0};
  const max={ribbon:10,pendant:14,ornament:6}[kind]||0;
  return {rotation:max*a*Math.sin(phase-.35),y:0};

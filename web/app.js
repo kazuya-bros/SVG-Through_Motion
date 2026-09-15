@@ -1,3 +1,5 @@
+import {installExpressionControls,normalizeExpressions} from './expression-presets.js';
+import {installRenderSourceUI} from './render-source-ui.js';
 import {installMotionLayout} from './motion-layout.js';
 import {secondaryKind,normalizeSecondary} from './secondary-motion.js';
 import {installSecondaryMotion} from './secondary-motion-ui.js';
@@ -56,7 +58,7 @@ let editor,heldEye="",wasPlayingBeforeHold=false;
 let mouthEditor,mouthPreview=null,artworkSources;
 let manualVowel=null,voiceTokens=[],speechStarted=0;
 let outputs=null,materialsWasPlaying=false,materialsRendering=false;
-let workspaceUI=null;
+let workspaceUI=null,expressionUI=null,renderSourceUI=null;
 let saveGuard=null,livePreview=false,savingProject=false;
 let staticFrameKey='',resumeAfterEdit=false;
 const inShapeEditor=()=>workspaceUI?.active==='edit';
@@ -142,6 +144,8 @@ function validateProject(p) {
   if(!p || p.version!==1 || !Array.isArray(p.parts) || p.parts.length>100 || !p.parts.length) throw Error('対応するプロジェクトJSONではありません');
   if(!Number.isFinite(p.width) || !Number.isFinite(p.height) || p.width<=0 || p.height<=0 || p.width*p.height>16777216) throw Error('キャンバスサイズが不正です');
   p.name=String(p.name || 'Untitled').slice(0,150);
+  p.expressionPresets=normalizeExpressions(p.expressionPresets);
+  const partIds=new Map(p.parts.map((part,i)=>[part.id,`p${String(i).padStart(3,'0')}`]));
   p.parts=p.parts.map((part,i)=>{
     for(const key of ['x','y','width','height']) if(!Number.isFinite(part[key]) || Math.abs(part[key])>20000) throw Error('パーツ座標が不正です');
     if(part.width<=0 || part.height<=0) throw Error('パーツサイズが不正です');
@@ -152,6 +156,9 @@ function validateProject(p) {
     if(part.lidAdjust)clean.lidAdjust=normalizeLid(part.lidAdjust);
     for(const k of ['hairStrands','savedHairStrands'])if(part[k])clean[k]=normalizeStrands(part[k],p);
     if(part.faceBase===true)clean.faceBase=true;
+    if(typeof part.materialId==='string'&&/^[a-f0-9]{32}$/.test(part.materialId))clean.materialId=part.materialId;
+    if(partIds.has(part.followPart)&&part.followPart!==part.id)clean.followPart=partIds.get(part.followPart);
+    if(Number.isFinite(part.attachmentDepth))clean.attachmentDepth=clamp(part.attachmentDepth,-1,1);
     if(typeof part.earMotion==='boolean')clean.earMotion=part.earMotion;
     clean.motionStrength=clamp(part.motionStrength??1,0,2);
     if(['l','r'].includes(part.blinkOverlay))clean.blinkOverlay=part.blinkOverlay;
@@ -172,6 +179,7 @@ function validateProject(p) {
     if(part.mouthInteriorSvg)clean.mouthInteriorSvg=sanitizeSvg(part.mouthInteriorSvg,`inside${i}-`);
     if(typeof part.originalUrl==='string' && (/^\/assets\/[a-f0-9]{32}\/originals\/p\d+\.png$/.test(part.originalUrl) || /^data:image\/png;base64,[a-zA-Z0-9+/=]+$/.test(part.originalUrl))) clean.originalUrl=part.originalUrl;
     clean.rasterDisabled=!!part.rasterDisabled;
+    if(['svg','original'].includes(part.renderSource))clean.renderSource=part.renderSource;
     if(typeof part.rasterSourceUrl==='string'&&(/^\/assets\/[a-f0-9]{32}\/originals\/p\d+\.png$/.test(part.rasterSourceUrl)||/^data:image\/png;base64,[a-zA-Z0-9+/=]+$/.test(part.rasterSourceUrl))&&/^[a-f0-9]{64}$/.test(part.rasterSignature||'')){clean.rasterSourceUrl=part.rasterSourceUrl;clean.rasterSignature=part.rasterSignature;}
     return clean;
   });
@@ -186,7 +194,7 @@ export function adoptProject(p,{saved=false}={}) {
   mouthEditor?.close({rebuild:false});
   outputs?.reset();
   motionAssistResult?.update(null);
-  project=validateProject(p); selected=null; time=0; playing=true;
+  project=validateProject(p); selected=null; time=0; playing=true;expressionUI?.refresh();
   manualVowel=null;mouthPreview=null;heldEye="";editor?.resetHold();
   if(project.rig?.segmented&&!project.rig.seamWeights)project.rig.seamPending=true;
   $('projectName').textContent=project.name; $('canvasInfo').textContent=`${project.width} × ${project.height} px`;
@@ -232,7 +240,7 @@ async function restoreRasterSources(target){
     const signature=await svgSignature(p.svgText);
     if(signature===await svgSignature(source.svgText)){p.rasterSourceUrl=source.originalUrl;p.rasterSignature=signature;}
   }
-  if(target.conversion?.mode!=='hybrid'||!/^[a-f0-9]{32}$/.test(target.id||''))return;
+  if(!['hybrid','prepared'].includes(target.conversion?.mode)||!/^[a-f0-9]{32}$/.test(target.id||''))return;
   try{
     const original=await (await request(`/api/projects/${target.id}`)).json();let changed=false;
     for(const p of target.parts){
@@ -253,7 +261,7 @@ async function restoreRasterSources(target){
       if(signature!==originalSignature)continue;
       p.rasterSourceUrl=source.originalUrl;p.rasterSignature=signature;changed=true;
     }
-    if(changed&&project===target){rebuild();mouthEditor?.refresh();}
+    if(changed&&project===target){rebuild();mouthEditor?.refresh();renderSourceUI?.refresh();}
   }catch{} // Offline or edited assets continue rendering their saved SVG.
 }
 async function restoreSourceEyelids(target) {
@@ -364,7 +372,7 @@ installLayerSort($('layers'),(id,beforeId)=>{
 function selectPart(id) {
   selected=id;const p=project.parts.find(p=>p.id===id);renderLayers();
   svg?.querySelectorAll('[data-part]').forEach(node=>node.classList.toggle('selected-part',node.dataset.part===id));
-  $('partEditor').open=true;$('noPart').hidden=true;$('partFields').hidden=false;$('selectedName').textContent=p.name;
+  $('partEditor').open=true;$('noPart').hidden=true;$('partFields').hidden=false;$('selectedName').textContent=p.name;renderSourceUI?.refresh();
   $('partRole').value=p.role;$('partOpacity').value=p.opacity;
   $('partPivotPick').hidden=!(p.deformGroup?.startsWith('arm-')||p.role==='hair'||p.role==='tail'||!!secondaryKind(p)||earEnabled(p));
   $('mouthMode').value=p.mouthMode||'source-closed';$('mouthModeLabel').hidden=p.role!=='mouth';
@@ -431,7 +439,8 @@ function currentPose() {
 
   }
   if(mouthEditor?.active&&mouthPreview!==null&&!speechActive&&!browserMouth&&!voiceMouth&&$('audio').paused){pose.mouth=+$('mouth').value;delete pose.vowelWeights;pose.vowel=mouthPreview==='closed'?'a':mouthPreview;}
-  return outputs?outputs.applyPose(pose,speechActive||browserMouth>0||voiceMouth>0||!$('audio').paused):pose;
+  const livePose=outputs?outputs.applyPose(pose,speechActive||browserMouth>0||voiceMouth>0||!$('audio').paused):pose;
+  return expressionUI?.apply(livePose)||livePose;
 }
 function frame(now) {
   const delta=Math.min((now-lastTick)/1000,.1);lastTick=now;
@@ -642,9 +651,9 @@ $('recent').onchange=safe(async()=>{if($('recent').value)adoptProject(await (awa
 $('closeWarnings').onclick=()=>$('warnings').close();
 function editableState(){
  if(!project)return '';
- const keys=['secondaryMotion','id','name','role','x','y','width','height','visible','opacity','pivotX','pivotY','motionStrength','earMotion','faceBase','mouthMode','svgText','closedSvgText','openSvgText','lidAdjust','hairControl','rasterDisabled','closedSource'];
+ const keys=['secondaryMotion','id','name','role','x','y','width','height','visible','opacity','pivotX','pivotY','motionStrength','earMotion','faceBase','mouthMode','svgText','closedSvgText','openSvgText','lidAdjust','hairControl','rasterDisabled','closedSource','renderSource','materialId','followPart','attachmentDepth'];
  const rig=Object.fromEntries(Object.entries(project.rig||{}).filter(([k])=>!['seamWeights','seamPending','seamVersion'].includes(k)));
- return JSON.stringify({name:project.name,parts:project.parts.map(p=>Object.fromEntries(keys.filter(k=>p[k]!==undefined).map(k=>[k,p[k]]))),rig,settings:settings(),voice:{tts:ttsUI.snapshot(),text:$('speechText').value,reading:$('speechReading').value,gain:$('gain').value}});
+ return JSON.stringify({name:project.name,expressionPresets:project.expressionPresets,parts:project.parts.map(p=>Object.fromEntries(keys.filter(k=>p[k]!==undefined).map(k=>[k,p[k]]))),rig,settings:settings(),voice:{tts:ttsUI.snapshot(),text:$('speechText').value,reading:$('speechReading').value,gain:$('gain').value}});
 }
 async function saveProject(){
  needProject();if(savingProject)throw Error('保存中です。少し待ってください。');
@@ -684,7 +693,11 @@ updateSettings();requestAnimationFrame(frame);
 installStartSample({adopt:adoptProject,validate:validateProject});
 installMainMenu({openFile:async data=>{adoptProject(data,{saved:true});await rasterReady;await ensureSeamRig(project);workspaceUI.show('live');}});
 safe(async()=>{
-  await refreshProjects();const saved=new URLSearchParams(location.search).get('project');
+  await refreshProjects();const query=new URLSearchParams(location.search),saved=query.get('project'),prepared=query.get('prepared');
+  if(prepared&&/^[a-f0-9]{32}$/.test(prepared)){
+    adoptProject(await (await request(`/api/projects/${prepared}`)).json());
+    return;
+  }
   if(saved&&/^[a-f0-9]{32}$/.test(saved)){
     const url=`/api/exports/${saved}/svg-through-motion.project.json`;
     adoptProject(await (await request(url)).json(),{saved:true});rememberCharacter({url},project.name,{savedAt:project.savedAt});
@@ -875,6 +888,8 @@ workspaceUI=installWorkspaceUI({project:()=>project,closeMouth:()=>mouthEditor?.
  }
 });
 
+expressionUI=installExpressionControls({host:$('motion-expressions'),project:()=>project,active:()=>!!project&&!inShapeEditor(),review:true,changed(){staticFrameKey='';}});
+renderSourceUI=installRenderSourceUI({project:()=>project,selected:()=>selected,changed:()=>rebuild()});
 saveGuard=installSaveGuard({state:editableState,save:saveProject,enabled:()=>!!project&&document.body.dataset.workspaceMode!=='live'});
 
 for(const [mount,input,value] of [['edit-eyes','editEyeClosure',EDIT_EYE_BLEND],['edit-mouth','mouth',EDIT_MOUTH_BLEND]]){

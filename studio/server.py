@@ -38,6 +38,10 @@ pool = ThreadPoolExecutor(max_workers=1)
 jobs = {}
 lock = threading.Lock()
 app = FastAPI(title='SVG-Through Motion', docs_url='/api/docs')
+from .materials import router as materials_router
+app.include_router(materials_router)
+from .material_inference import router as material_inference_router
+app.include_router(material_inference_router)
 from .loop_export import router as loop_export_router
 app.include_router(loop_export_router)
 from .integration_export import router as integration_export_router

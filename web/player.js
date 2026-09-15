@@ -6,6 +6,7 @@ import {speechChunks,SpeechRun,playSpeechAudio} from './runtime-speech.js';
 import {outputBackground} from './runtime-input.js';
 import {installPlayerControls} from './player-controls.js';
 import {applyCameraPose} from './camera-motion.js';
+import {installExpressionControls} from './expression-presets.js';
 
 const params=new URLSearchParams(location.search),sid=params.get('session'),display=params.has('display');
 const mode=['mic','camera','api'].includes(params.get('mode'))?params.get('mode'):'api';
@@ -13,7 +14,7 @@ const base='/api/runtime/sessions/'+encodeURIComponent(sid),$=id=>document.getEl
 const runs=new SpeechRun(),envelope=new SpeechEnvelope(),audio=new Audio();
 let config,renderer,ws,context,analyser,samples,audioUrl,ready=false,active=false,packet=null,received=0,closed=false;
 let started=performance.now(),lastPush=0,nativeSpeaking=false;
-let controls=null;
+let controls=null,expressions=null;
 const initialBackground=outputBackground(params.get('background')||'#00ff00');
 document.documentElement.style.background=display?'transparent':initialBackground;
 if(display)$('notice').hidden=true;
@@ -72,6 +73,7 @@ function frame(now){
   else if(nativeSpeaking)pose.mouth=envelope.step(.45+.3*Math.sin(time*18),now);
   else if(!audio.paused&&analyser){analyser.getFloatTimeDomainData(samples);pose.mouth=envelope.sample(samples,config.gain,now);}
   else pose.mouth=active?envelope.step(0,now):(controls?.microphoneActive?controls.mouth:cameraPose?.mouth||0);
+  if(!display)pose=expressions?.apply(pose)||pose;
   renderer.draw(pose);
   if(!display&&now-lastPush>50){send({type:'pose',pose,time});lastPush=now;}
  }
@@ -84,5 +86,6 @@ try{
  document.title='SVG-Through Motion — '+(config.project.name||'キャラクター出力')+' — '+sid.slice(0,6);
  renderer=await prepareCanvasRenderer(config.project,1080);$('stage').replaceChildren(renderer.canvas);
  if(!display){controls=installPlayerControls({mode,base,session:sid});if(mode==='api'){notice('音声を有効にしてください',true);void enable();}else notice('');}
+ if(!display)expressions=installExpressionControls({host:$('controls'),project:()=>config.project});
  connect();requestAnimationFrame(frame);
 }catch(e){notice(e.message);}

@@ -21,10 +21,11 @@ export async function matchingRasterSource(part){
   return normalized(part.svgText)===normalized(source.svgText)?source.originalUrl:null;
 }
 export async function rasterProject(project){
-  if(project.settings?.renderSource!=='original')return project;
+  if(project.settings?.renderSource!=='original'&&!project.parts.some(p=>p.renderSource==='original'))return project;
   const parts=[];
   for(const p of project.parts){
-    let url=p.role==='static'?await matchingRasterSource(p):null;
+    const useOriginal=(p.renderSource||project.settings?.renderSource)==='original';
+    let url=useOriginal&&p.role==='static'?await matchingRasterSource(p):null;
     if(!url){parts.push(p);continue;}
     try{
       if(!url.startsWith('data:')){

@@ -1,3 +1,4 @@
+import {attachmentOwner} from './attachments.js';
 import {secondaryRigid} from './secondary-motion.js';
 import {naturalEarPose,naturalEarFilter,earFilterMatrix} from './natural-ears.js';
 import {animeMouth,animeMouthSvg,mouthOffset} from './anime-mouth.js';
@@ -51,6 +52,7 @@ export function mouthScale(open, settings={},pose={}) {
   return [(closed+(1-closed)*blend)*(1+(vx-1)*blend)*(1+(t.width-1)*near),(.045+.955*amount)*(1+(vy-1)*blend)*(1+(t.height-1)*near)];
 }
 export function partMotion(part,pose,project) {
+  if(part.followPart){const owner=attachmentOwner(part,project.motionParts||project.parts);if(owner!==part)return partMotion({...owner,followPart:null},pose,project);}
   if(pose.pivotOverrides?.[part.id])part={...part,...pose.pivotOverrides[part.id]};
   const sign=part.role==='ear-r'?-1:part.role==='ear-l'?1:part.x+part.width/2<project.width/2?-1:1;
   const strength=clamp(part.motionStrength??1,0,2);

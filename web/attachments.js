@@ -1,0 +1,3 @@
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,Number.isFinite(v)?v:0));
+export function attachmentOwner(part,parts){const seen=new Set([part.id]);let owner=part;while(owner.followPart){const next=parts.find(p=>p.id===owner.followPart);if(!next||seen.has(next.id))break;seen.add(next.id);owner=next;}return owner;}
+export function attachmentOffset(part,project,pose){if(!project.settings?.rigEnabled)return [0,0];const d=clamp(part.attachmentDepth??0,-1,1),size=project.rig?.faceWidth||project.width*.3;return [clamp(pose.yaw??0,-1,1)*d*size*.06,-clamp(pose.pitch??0,-1,1)*d*size*.04];}

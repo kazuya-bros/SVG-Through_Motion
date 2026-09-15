@@ -11,7 +11,7 @@ export async function mapTree(value,transform){
 }
 export function playbackScene(project){
  const result={};
- for(const k of ['version','id','name','width','height','rig','settings','parts'])if(project[k]!==undefined)result[k]=structuredClone(project[k]);
+ for(const k of ['version','id','name','width','height','rig','settings','parts','expressionPresets'])if(project[k]!==undefined)result[k]=structuredClone(project[k]);
  for(const p of result.parts){
   for(const k of ['previousClosedSvgTexts','legacyClosedSvgText'])delete p[k];
   if(p.artworkSources)p.artworkSources=p.artworkSources[p.artworkSource]?{[p.artworkSource]:p.artworkSources[p.artworkSource]}:{};

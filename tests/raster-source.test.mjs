@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {svgSignature,rasterProject,matchingRasterSource} from '../web/raster-source.js';
+test('per-part SVG and PNG choices override defaults but never hide vector edits',async()=>{
+ const text='<svg><path fill="red"/></svg>',part={role:'static',width:2,height:2,svgText:text,rasterSourceUrl:'data:image/png;base64,YQ==',rasterSignature:await svgSignature(text)};
+ const p={parts:[{...part,renderSource:'original'}],settings:{renderSource:'svg'}};
+ assert.match((await rasterProject(p)).parts[0].svgText,/<image /);
+ p.parts[0].svgText=text.replace('red','blue');assert.equal((await rasterProject(p)).parts[0].svgText,p.parts[0].svgText);
+ p.parts=[{...part,renderSource:'svg'}];p.settings.renderSource='original';assert.equal((await rasterProject(p)).parts[0].svgText,text);
+});
 test('saved SVG ID prefixes preserve provenance, edited colors invalidate it',async()=>{
   const a='<svg><defs><mask id="a"><path fill="white"/></mask></defs><path mask="url(#a)" fill="red"/></svg>';
   const b=a.replaceAll('id="a"','id="s0-a"').replaceAll('url(#a)','url(#s0-a)');

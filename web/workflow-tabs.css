@@ -94,7 +94,7 @@ body[data-task=edit] .mouth-history{display:none}
 /* Categories stay within reach while tuning long groups of controls. */
 #tab-motion>.motion-categories{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));position:sticky;top:0;z-index:4;box-shadow:0 6px 0 white;margin:0 0 20px;padding:4px}
 #tab-motion>.motion-categories button{grid-column:span 2}
-#tab-motion>.motion-categories button:nth-last-child(-n+2){grid-column:span 3}
+#tab-motion>.motion-categories button:nth-last-child(-n+2){grid-column:span 2}
 #tab-motion>.motion-categories button{min-height:34px}
 .motion-preset-actions{margin-bottom:12px}
 #tab-motion .motion-page{min-height:0}
