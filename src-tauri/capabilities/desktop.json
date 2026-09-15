@@ -1,0 +1,6 @@
+{
+  "identifier": "desktop-settings",
+  "description": "Only the bundled settings window can control the desktop process. No remote origin receives native permissions.",
+  "windows": ["desktop"],
+  "permissions": ["core:default"]
+}

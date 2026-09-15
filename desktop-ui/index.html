@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SVG-Through Motion — アプリ設定</title><link rel="stylesheet" href="desktop.css"></head>
+<body>
+<header><div class="mark" aria-hidden="true">S</div><div><strong>SVG-Through Motion</strong><p>デスクトップアプリ</p></div><span id="connection" class="badge">起動前</span></header>
+<main>
+<section class="card launch"><div><p class="eyebrow">WORKSPACE</p><h1>制作をはじめる</h1><p>素材とプロジェクトの保存先を選んで起動します。</p></div>
+<label for="dataDir">素材・プロジェクトの保存先</label><div class="path"><input id="dataDir" placeholder="例：E:\SVG-Through\data"><button id="pickData">フォルダを選ぶ</button></div>
+<p class="hint">以前の制作を続ける場合は、既存の data フォルダを選んでください。</p>
+<details id="advanced"><summary>See-Through・接続の設定</summary><label for="seeThrough">準備済みSee-Through環境（空欄で自動検出）</label><div class="path"><input id="seeThrough"><button id="pickSee">選ぶ</button></div><label for="port">アプリ用ポート</label><input id="port" type="number" min="1" max="65535" value="18765"><p class="hint">起動後の変更は、アプリを終了して再度起動すると行えます。</p></details>
+<div class="actions"><button id="start" class="primary">アプリを起動する</button><span id="serverUrl" class="hint"></span></div>
+</section>
+<section class="card"><div class="section-heading"><div><p class="eyebrow">EXPRESSION SHORTCUTS</p><h2>どの画面からでも、表情を切り替える</h2></div><label class="switch"><input id="enabled" type="checkbox">有効にする</label></div>
+<p>ゲームやOBSを操作している間も使えます。制作画面でキャラクターの出力を開いてから設定してください。</p>
+<div class="target"><label for="target">操作するキャラクター<select id="target"><option value="">出力を選んでください</option></select></label><button id="refresh">出力一覧を更新</button></div>
+<p class="hint">誤操作を防ぐため、アプリ起動後は操作対象を選び直します。キーの割り当ては保存されます。</p>
+<div class="table-wrap"><table><thead><tr><th>表情</th><th>グローバルキー</th><th>切り替え方</th><th><span class="sr-only">操作</span></th></tr></thead><tbody id="bindings"></tbody></table></div>
+<div class="actions"><button id="add">割り当てを追加</button><button id="save" class="primary">設定を保存・適用</button></div>
+<p class="hint">CtrlまたはAltを含むキーを指定します。入力欄でキーを押すと組み合わせを入力できます。入力中は、その組み合わせが別アプリにも作用する場合があります。</p>
+<p id="registered" class="registration">ホットキーは停止中です。</p><ul id="errors" class="errors"></ul><p id="lastEvent" class="hint" aria-live="polite"></p>
+</section>
+<p id="status" role="status" aria-live="polite"></p>
+<footer><span>制作・出力画面の「アプリ」メニューから、この設定を開けます。</span><button id="exit">アプリを終了</button></footer>
+</main><script type="module" src="desktop.js"></script></body></html>

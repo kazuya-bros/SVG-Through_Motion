@@ -58,10 +58,11 @@ function connect(){
  ws.onopen=()=>{if(!display){controls?.connection(true);send({type:'ready',ready});if(mode==='api')notice(ready?'':'音声を有効にしてください',!ready);}};
  ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='close'&&!display){closed=true;stop();ws.close();notice('出力を閉じました。');window.close();return;}if(m.type==='speak'&&!display)void speak(m);
   if(m.type==='stop'&&!display){stop();send({type:'stopped',id:m.id});}
+  if(m.type==='expression'&&!display)expressions?.command(m);
   if(m.type==='pose'){packet=m;received=performance.now();}
   if(m.type==='status'&&display){active=m.connected;if(!active)packet=null;}
  };
- ws.onclose=e=>{controls?.connection(false);stop();packet=null;active=false;if(closed)return;if(e.code===1008){closed=true;notice(e.reason||'出力を開き直してください');return;}notice('再接続しています…');setTimeout(connect,1500);};
+ ws.onclose=e=>{expressions?.command({action:'release_all'});controls?.connection(false);stop();packet=null;active=false;if(closed)return;if(e.code===1008){closed=true;notice(e.reason||'出力を開き直してください');return;}notice('再接続しています…');setTimeout(connect,1500);};
  ws.onerror=()=>ws.close();
 }
 function frame(now){

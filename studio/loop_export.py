@@ -17,7 +17,8 @@ from PIL import Image
 from starlette.concurrency import run_in_threadpool
 
 router = APIRouter(prefix='/api/loop-exports')
-EXPORTS = Path(__file__).resolve().parent.parent / 'data' / 'exports'
+from .paths import DATA
+EXPORTS = DATA / 'exports'
 MAX_FRAME_BYTES = 8 * 1024**2
 jobs = {}
 registry_lock = threading.Lock()

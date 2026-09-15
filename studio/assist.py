@@ -15,7 +15,8 @@ from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field
 
 router = APIRouter(prefix='/api/assist', tags=['Correction workflow'])
-ROOT = Path(__file__).resolve().parents[1]/'data'/'assist'
+from .paths import DATA
+ROOT = DATA/'assist'
 LOCK = threading.RLock()
 MAX_STATE = 48*1024**2
 
@@ -116,7 +117,7 @@ async def save_session(sid: str, request: Request, expected_version: int=0):
 
 def register_input(targets, options, donors, preferences=None, depth_index=None):
     identifier=uuid.uuid4().hex
-    body=dict(paths=[str(p.relative_to(Path(__file__).resolve().parents[1]/'data')) for p in targets],
+    body=dict(paths=[str(p.relative_to(DATA)) for p in targets],
               options=options,donors=list(donors),preferences=preferences or {},job_id=None,depth_index=depth_index)
     append(folder('inputs',identifier),body,0)
     return dict(input_id=identifier,state='awaiting_agent')

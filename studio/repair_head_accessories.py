@@ -12,6 +12,7 @@ from psd_tools import PSDImage
 from .convert import trace_part
 from .repair_hair import raster_matches
 from .segmented import split_motion_layers
+from .paths import DATA
 
 
 def repair(saved,psd_path):
@@ -20,7 +21,7 @@ def repair(saved,psd_path):
     project=json.loads(Path(saved).read_text(encoding='utf8'))
     if not project.get('conversion',{}).get('motionParts'):raise ValueError('A segmented hybrid project is required')
     if any(p.get('independentAccessory') for p in project['parts']):raise ValueError('Headwear is already separated')
-    root=Path(__file__).resolve().parents[1]/'data'/'projects'/project['id']
+    root=DATA/'projects'/project['id']
     psd=PSDImage.open(psd_path)
     if psd.size!=(project['width'],project['height']):raise ValueError('PSD dimensions differ')
     plate=np.array(Image.open(root/'work'/'clean-plate.png').convert('RGBA'))
@@ -40,7 +41,7 @@ def repair(saved,psd_path):
     backing=next(np.array(im) for name,_,im in leading if meta[name]['deformGroup']=='core' and not meta[name].get('independentAccessory'))
     x,y,w,h=[core[k] for k in ('x','y','width','height')];local=mask[y:y+h,x:x+w]
     body[local]=backing[y:y+h,x:x+w][local]
-    out=Path(__file__).resolve().parents[1]/'data'/'exports'/uuid.uuid4().hex;out.mkdir()
+    out=DATA/'exports'/uuid.uuid4().hex;out.mkdir()
     for d in ('work','parts'):(out/d).mkdir()
     def encode(part,im):
         svg,paths=trace_part(im,out/'work',part['id'],project['conversion']['preset'])

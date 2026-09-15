@@ -25,8 +25,7 @@ from .convert import convert_file, PRESETS
 from .hybrid import convert_hybrid
 from .eyelids import attach_closed_lashes
 
-ROOT = Path(__file__).resolve().parent.parent
-DATA = ROOT / 'data'
+from .paths import ROOT, DATA
 PROJECTS = DATA / 'projects'
 UPLOADS = DATA / 'uploads'
 EXPORTS = DATA / 'exports'
@@ -52,6 +51,8 @@ from .assist import router as assist_router
 app.include_router(assist_router)
 from .runtime import router as runtime_router
 app.include_router(runtime_router)
+from .desktop import router as desktop_router
+app.include_router(desktop_router)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', '[::1]', 'testserver'])
 
 

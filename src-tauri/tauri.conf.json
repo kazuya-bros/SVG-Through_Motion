@@ -1,0 +1,18 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "SVG-Through Motion",
+  "version": "0.2.0",
+  "identifier": "com.kazuya.svg-through",
+  "build": {"frontendDist": "../desktop-ui"},
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [{"label":"desktop","title":"SVG-Through Motion — アプリ設定","width":960,"height":820,"minWidth":720,"minHeight":580,"additionalBrowserArgs":"--disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows"}],
+    "security": {"csp":"default-src 'self'; script-src 'self'; style-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' data:"}
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "resources": {"../.desktop-build/backend/svg-through-server/":"backend/"},
+    "windows": {"nsis":{"displayLanguageSelector":false,"languages":["Japanese"],"installMode":"currentUser"}}
+  }
+}

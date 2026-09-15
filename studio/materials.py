@@ -25,8 +25,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .convert import MAX_PIXELS, convert_file
 
-ROOT = Path(__file__).resolve().parent.parent
-STORE = ROOT / 'data' / 'materials'
+from .paths import ROOT, DATA
+STORE = DATA / 'materials'
 router = APIRouter(prefix='/api/materials', tags=['素材の分割・補正'])
 mutex = threading.RLock()
 TAGS = ['static', 'face', 'front hair', 'back hair', 'neck', 'topwear', 'bottomwear',
