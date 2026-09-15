@@ -1,0 +1,21 @@
+<!doctype html><meta charset="utf-8"><title>前髪素材の比較</title><style>body{font:14px system-ui;background:#edf0f5;margin:20px}main{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}canvas{width:100%;height:170px;object-fit:contain;background:white}h2{font-size:15px;margin:6px 0}p{line-height:1.6}</style><h1>前髪の素材を比較</h1><p>左：現在の元絵ベース　／　右：See-Throughの前髪PNG。上から開き目・36%・閉じ目。睫毛・眉の補助レイヤーは右側だけ非表示。</p><pre id="result">準備中…</pre><main id="views"></main>
+<script type="module">
+import {prepareCanvasRenderer} from './canvas-renderer.js?v=mouth-editor-9';
+import {svgSignature} from './raster-source.js';
+try{
+ const p=await(await fetch('/api/exports/8ebb0a37f5534fa5b9e0b76d10df96ed/khaula-motion.project.json')).json();
+ p.settings={...p.settings,rigEnabled:false,renderSource:'original',background:'white',vowels:false};
+ const q=structuredClone(p),part=q.parts.find(v=>v.deformGroup==='front');
+ const blob=await(await fetch('/api/exports/a2ce09c2835e4184b01d744ff3e32c07/see-through-front.png')).blob();
+ const url=await new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result);f.readAsDataURL(blob);});
+ part.x=part.y=0;part.width=q.width;part.height=q.height;delete part.spatialBounds;
+ part.svgText=`<svg xmlns="http://www.w3.org/2000/svg" width="${q.width}" height="${q.height}"><rect width="${q.width}" height="${q.height}" fill="none"/></svg>`;
+ part.rasterSourceUrl=url;part.rasterSignature=await svgSignature(part.svgText);
+ q.parts.filter(v=>v.blinkOverlay||v.faceOverlay).forEach(v=>v.visible=false);
+ const a=await prepareCanvasRenderer(p),b=await prepareCanvasRenderer(q);
+ for(const blink of [0,.36,1])for(const [renderer,name] of [[a,'元絵ベース'],[b,'See-Through前髪']]){
+  renderer.draw({blinkL:blink,blinkR:blink,mouth:1});const section=document.createElement('section'),h=document.createElement('h2'),c=document.createElement('canvas');h.textContent=name+' ／ '+Math.round(blink*100)+'%';c.width=640;c.height=360;c.getContext('2d').drawImage(renderer.canvas,330,220,360,202.5,0,0,640,360);section.append(h,c);document.querySelector('#views').append(section);
+ }
+ a.dispose();b.dispose();document.querySelector('#result').textContent='比較用プレビュー。保存データは変更していません。';document.body.dataset.result='pass';
+}catch(e){document.querySelector('#result').textContent=e.stack;}
+</script>

@@ -1,0 +1,19 @@
+<!doctype html><html lang="ja"><meta charset="utf-8"><title>Teth2 サンプル透過確認</title>
+<style>body{margin:0;background:#121622;color:#fff;font:14px system-ui}header{padding:12px 20px;display:flex;gap:16px;align-items:center}button{padding:8px 16px}#stage{background:#00ff00;width:min(100vw,900px);height:min(100vw,900px);margin:auto}canvas{width:100%;height:100%;display:block}</style>
+<header>Teth2 サンプル透過確認 <button id="background">背景を切替</button><button id="pause">動きを止める</button><button id="source">SVGで確認</button><span id="state">読み込み中</span></header><main id="stage"></main>
+<script type="module">
+import {prepareCanvasRenderer} from './canvas-renderer.js?v=mouth-editor-9';
+import {loopPose} from './motion.js?v=mouth-editor-9';
+import {sanitizeSvg} from './assets.js';
+import {svgSignature} from './raster-source.js';
+const project=await(await fetch('./samples/teth/project.json')).json();
+for(const part of project.parts){const before=part.rasterSignature;part.svgText=sanitizeSvg(part.svgText,'qa-');if(before&&await svgSignature(part.svgText)!==before)throw Error('Raster signature changed: '+part.id);}
+project.settings.background='transparent';
+let renderer,t=0,playing=true,last=performance.now();
+async function load(){document.querySelector('#state').textContent='読み込み中';renderer?.dispose();renderer=await prepareCanvasRenderer(project,900);document.querySelector('#stage').replaceChildren(renderer.canvas);document.querySelector('#state').textContent=project.settings.renderSource==='original'?'元の画質':'SVG';}
+await load();
+function frame(now){if(playing)t+=(now-last)/1000;last=now;renderer.draw({...loopPose(t,project.settings),mouth:(Math.sin(t*14)+1)/2});requestAnimationFrame(frame);}requestAnimationFrame(frame);
+document.querySelector('#pause').onclick=e=>{playing=!playing;e.target.textContent=playing?'動きを止める':'動かす';};
+let bg=0;document.querySelector('#background').onclick=()=>{document.querySelector('#stage').style.background=['#00ff00','#191d2a','#ff00ff'][++bg%3];};
+document.querySelector('#source').onclick=async e=>{project.settings.renderSource=project.settings.renderSource==='original'?'svg':'original';e.target.textContent=project.settings.renderSource==='original'?'SVGで確認':'元の画質で確認';await load();};
+</script></html>

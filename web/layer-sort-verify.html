@@ -1,0 +1,48 @@
+<!doctype html><meta charset="utf-8"><title>Layer reorder verification</title>
+<pre id="result">検証中</pre><iframe id="app" style="width:1100px;height:850px" src="/?project=4e8791002273498eac635c5aa8712785"></iframe>
+<script type="module">
+import {reorderLayers} from './layer-sort.js';
+const out=document.querySelector('#result'),frame=document.querySelector('#app'),log=[];
+const wait=ms=>new Promise(r=>setTimeout(r,ms)),check=(ok,name)=>{if(!ok)throw Error(name);log.push('PASS '+name);out.textContent=log.join('\n');};
+try{
+ const parts=['back','middle','front'].map(id=>({id,visible:id!=='middle',x:12})),refs=[...parts];
+ check(reorderLayers(parts,'back','front')&&parts.map(p=>p.id).join()==='middle,front,back','最背面から最前面へ移動');
+ check(reorderLayers(parts,'back',null)&&parts.every((p,i)=>p===refs[i]),'最背面へ戻して素材と属性を維持');
+ check(!reorderLayers(parts,'missing','front')&&!reorderLayers(parts,'front','front'),'不正な対象と自身への移動を無視');
+ check(JSON.parse(JSON.stringify(parts)).map(p=>p.id).join()==='back,middle,front','保存データも描画順を保持');
+ for(let i=0;i<300&&!frame.contentDocument?.querySelector('canvas.rig-preview');i++)await wait(100);
+ const w=frame.contentWindow,d=frame.contentDocument,list=d.querySelector('#layers');
+ const rows=()=>[...list.querySelectorAll('.layer')],order=()=>rows().map(r=>r.dataset.partId),initial=order();
+ check(initial.length===14,'実プロジェクトのレイヤーを読み込み');
+ // Synthetic pointer events have no browser capture; geometry and application handlers remain real.
+ list.setPointerCapture=()=>{};list.hasPointerCapture=()=>false;
+ const event=(target,type,x,y)=>target.dispatchEvent(new w.PointerEvent(type,{pointerId:7,button:0,buttons:type==='pointerup'?0:1,clientX:x,clientY:y,bubbles:true,cancelable:true}));
+ const start=(row)=>{const b=row.getBoundingClientRect(),x=b.left+30,y=b.top+b.height/2;event(row,'pointerdown',x,y);return {x,y};};
+ let row=rows()[0],p=start(row);event(list,'pointermove',p.x,p.y+2);event(list,'pointerup',p.x,p.y+2);
+ check(order().join()===initial.join(),'微小なマウス移動で順序を変えない');
+ p=start(rows()[0]);let dest=rows()[3].getBoundingClientRect();event(list,'pointermove',p.x,dest.bottom-3);
+ check(!!list.querySelector('.drop-before'),'移動先の挿入線を表示');
+ event(list,'pointerup',p.x,dest.bottom-3);await wait(300);
+ const expected=[...initial];expected.splice(3,0,expected.shift());
+ check(order().join()===expected.join(),'下へドラッグして複数行を越えて移動');
+ check(d.querySelector('#layers .selected').dataset.partId===initial[0]&&d.body.dataset.editStep==='parts','移動したパーツを選択して編集を維持');
+ const paint=[...d.querySelector('#artboard svg').querySelectorAll('[data-part]')].map(n=>n.dataset.part);
+ const backToFront=[...expected].reverse();
+ check(paint.length>=expected.length&&paint.every((id,i)=>id===backToFront[i%backToFront.length]),'実際のSVG描画順に反映（変形用の各描画グループ）');
+ p=start(rows()[3]);dest=rows()[0].getBoundingClientRect();event(list,'pointermove',p.x,dest.top+2);event(list,'pointerup',p.x,dest.top+2);await wait(250);
+ check(order().join()===initial.join(),'上へドラッグで元の順序に戻る');
+ p=start(rows()[0]);event(list,'pointermove',p.x,p.y+100);d.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));event(list,'pointerup',p.x,p.y+100);
+ check(order().join()===initial.join()&&!list.querySelector('.dragging,.drop-before,.drop-after'),'Escでキャンセルし挿入線を消す');
+ p=start(rows()[0]);event(list,'pointermove',list.getBoundingClientRect().right+60,p.y+100);event(list,'pointerup',list.getBoundingClientRect().right+60,p.y+100);
+ check(order().join()===initial.join(),'一覧の外で離すとキャンセル');
+ rows()[0].dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowDown',altKey:true,bubbles:true,cancelable:true}));await wait(250);
+ check(order()[1]===initial[0],'Alt＋下で一段移動');
+ rows()[1].dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowUp',altKey:true,bubbles:true,cancelable:true}));await wait(250);
+ check(order().join()===initial.join(),'Alt＋上で一段戻す');
+ const box=rows()[0].querySelector('input'),visible=box.checked;box.click();check(box.checked!==visible&&order().join()===initial.join(),'表示チェックで順序を変更しない');box.click();
+ list.style.height='150px';list.style.flex='none';list.scrollTop=0;p=start(rows()[0]);const b=list.getBoundingClientRect();event(list,'pointermove',p.x,b.bottom-4);await wait(250);
+ check(list.scrollTop>0,'一覧の下端で自動スクロール');event(list,'pointercancel',p.x,b.bottom-4);
+ check(order().join()===initial.join(),'ポインター中断で変更を取り消す');
+ document.body.dataset.result='pass';
+}catch(e){out.textContent+='\nFAIL '+e.stack;document.body.dataset.result='fail';}
+</script>

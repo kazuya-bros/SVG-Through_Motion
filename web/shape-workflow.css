@@ -1,0 +1,80 @@
+body[data-task=edit] .timeline,body[data-task=edit] #viewMode,body[data-task=edit] #editorGuide,body[data-task=edit] .stage-badge,body[data-task=edit] .stage-footer{display:none!important}
+.work-area-label{display:none}body[data-task=edit] .work-area-label{display:block;font-size:12px;font-weight:600} .work-area-label small{display:block;font-size:10px;font-weight:400;color:var(--muted);margin-top:5px}
+body:is([data-task=edit],[data-task=motion],[data-task=export]) #stage{touch-action:none;cursor:grab;user-select:none}body:is([data-task=edit],[data-task=motion],[data-task=export]) #stage.panning{cursor:grabbing}body[data-task=edit] .statusbar{min-height:32px}
+#layerPalette{flex:0 1 auto;display:block;margin-top:4px}#layerPalette>summary{font-size:12px;color:var(--ink);padding:4px 8px;list-style:revert;cursor:pointer;margin:0}#layerPalette>summary small{display:block;padding-left:13px;color:var(--muted);font-size:10px;font-weight:400;margin-top:6px}#layerPalette>h3{display:none}#layerPalette[open]{display:flex;flex-direction:column;flex:1}#layerPalette[open]>.layers{margin-top:12px}
+#tab-edit>.context-tabs{grid-template-columns:1fr 1fr;align-items:stretch}#tab-edit>.context-tabs button{font-size:12px;padding:9px 3px}#tab-edit>.context-tabs small{font-size:9px;font-weight:400}
+.edit-step-actions{display:flex;gap:7px;margin-top:24px;padding-top:14px;border-top:1px solid var(--line)}.edit-step-actions button{font-size:12px}#editNext{flex:1}
+.slider-ends{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);font-weight:400;margin-top:5px;width:100%}
+#edit-mouth>label{display:block;margin:0 0 20px}#edit-mouth #mouthEditor>summary{display:none}#mouthResume{display:none}#mouthEditor>p.tiny{display:none}#mouthEditor .row{margin:12px 0 0}#mouthEditor .row button{padding:8px}
+body:has(#mouthWorkbench:not([hidden])) #mouthShow,body:has(#mouthWorkbench:not([hidden])) #mouthEditor>label:has(#mouthShape){display:none}
+body[data-task=edit] #mouthWorkbench>header{display:none}#mouthWorkbench .mouth-viewport{cursor:grab}#mouthWorkbench .mouth-viewport:active{cursor:grabbing}
+#eyeEditor>summary{display:none}#eyeEditor>label{margin:12px 0}#eyeEditor>details .coordinate-row{flex-wrap:wrap}#lidHint{font-size:11px}#eyeEditor>.coordinate-row{margin-top:16px}
+@media(max-width:1120px){.work-area-label small{max-width:170px;font-size:9px}.view-tools{margin-left:auto}.stage-toolbar{gap:5px}}
+
+.artboard>svg.eye-gizmo{position:absolute;pointer-events:none;overflow:visible;z-index:5;padding:0}
+.eye-gizmo circle{pointer-events:all;fill:white;stroke:#5969d8;stroke-width:1.5;vector-effect:non-scaling-stroke;cursor:grab}
+.eye-gizmo circle:hover{fill:#dfe4ff}.eye-gizmo .eye-hit{pointer-events:stroke;fill:none;stroke:#5969d8;stroke-opacity:.08;cursor:move}
+.eye-gizmo .eye-hit:hover{stroke-opacity:.2}.eye-gizmo .eye-guide{fill:none;stroke:#5969d8;stroke-opacity:.55;stroke-width:1;vector-effect:non-scaling-stroke;stroke-dasharray:3 3}
+#eyeNumbers{margin-top:16px}#eyeEditor>.coordinate-row:empty{display:none}.blend-reset{font-size:11px;margin:8px 0 12px}
+.shape-guide{margin:0 0 16px;padding:12px;border:1px solid #d4dcf8;background:#f8faff;border-radius:9px;font-size:12px;line-height:1.7}.shape-guide p{margin:0 0 10px}.shape-tools,.pose-buttons{display:flex;gap:5px;margin:10px 0}.shape-tools button,.pose-buttons button{flex:1;padding:8px 5px;font-size:11px}.shape-guide button.active{border-color:#5268d8;color:#4056b7;background:#e9edff}.shape-guide .tool-help{font-size:11px;margin-bottom:0;color:#526278}
+.transform-area{fill:#5268d806;stroke:#5268d8;stroke-width:1;vector-effect:non-scaling-stroke;pointer-events:all;cursor:move}.transform-handle,.transform-rotate{fill:white;stroke:#5268d8;stroke-width:1.5;vector-effect:non-scaling-stroke;pointer-events:all}.transform-handle:hover,.transform-rotate:hover{fill:#d9e0ff}.transform-rotate{cursor:grab}.transform-stem{stroke:#5268d8;stroke-width:1;vector-effect:non-scaling-stroke;pointer-events:none}
+.shape-guide .shape-check{margin:5px 0 12px}.shape-guide .donor-review-card{padding:0;border:0;background:none;margin:0 0 12px}.shape-guide .donor-review-card p{font-size:11px;color:var(--muted);margin:0 0 6px}.shape-guide .donor-review-card button{border-color:#5268d8;color:#4056b7;background:white;font-weight:600}.shape-guide .pose-help{margin:10px 0;font-size:11px;color:var(--muted)}
+#edit-eyes>.control-card{display:none}body[data-task=edit] .mouth-shape-chips{display:none}
+.shape-stage-preview{display:none;flex-shrink:0;margin:12px 18px 0;padding:14px 18px;background:white;border:1px solid #c7d0df;border-radius:10px}
+body[data-task=edit][data-edit-step=eyes] #eyesPreviewControl,body[data-task=edit][data-edit-step=mouth] #mouthPreviewControl{display:block}
+.shape-stage-preview>p:first-child{margin:0 0 12px;font-size:14px;font-weight:600}.shape-stage-preview .slider-label{display:block;font-size:12px;color:var(--muted)}.shape-stage-preview output{float:right;color:var(--accent);font-variant-numeric:tabular-nums}.shape-stage-preview input[type=range]{appearance:none;display:block;width:100%;height:12px;margin:20px 0 14px;border:0;border-radius:8px;background:linear-gradient(to right,var(--accent) var(--shape-progress,0%),#dfe5f0 var(--shape-progress,0%));cursor:ew-resize;touch-action:pan-y}.shape-stage-preview input[type=range]::-webkit-slider-thumb{appearance:none;border-radius:50%;background:var(--accent);width:26px;height:26px;border:3px solid white;box-shadow:0 1px 5px #26385950}.shape-stage-preview input[type=range]::-moz-range-thumb{width:22px;height:22px;border:3px solid white;border-radius:50%;background:var(--accent)}.shape-stage-preview .slider-ends{font-size:12px}.shape-stage-preview .pose-help{margin:10px 0 0;font-size:11px;line-height:1.5;color:var(--muted)}
+.correction-choices{display:grid;gap:7px}.correction-choices button{text-align:left;font-size:12px}.shape-guide .shape-repair{margin-top:14px}.shape-guide .fix-help{padding:10px;background:#edf0ff;border-radius:6px;margin-top:12px}.shape-guide .fix-help:empty{display:none}
+.eye-through-controls{border-top:1px solid var(--line);padding-top:16px;margin:16px 0}.eye-through-controls .slider-label{display:block}.eye-through-controls input[type=range]{width:100%;margin-top:12px}.eye-through-controls output{float:right;color:var(--accent)}
+body[data-eye-review=true] #eyesGuide .correction-active,body[data-eye-review=true] #eyesAdjustDonor,body[data-mouth-review=true] #mouthGuide .correction-active,body[data-mouth-review=true] #mouthAdjustDonor{display:none}
+@media(max-width:1120px){.shape-stage-preview{margin:10px 12px 0;padding:12px}.shape-stage-preview>p:first-child{font-size:13px}}
+.stage-shape-tools{display:none;flex-shrink:0;margin:0 18px 8px;padding:9px 12px;background:white;border-color:var(--line)}
+body[data-task=edit][data-edit-step=eyes] #eyesGuide,body[data-task=edit][data-edit-step=mouth] #mouthGuide{display:block}
+.stage-shape-row,.stage-shape-row>.correction-active{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.stage-shape-row strong{margin-right:4px}
+.stage-shape-tools .shape-tools{display:flex;margin:0;gap:4px}.stage-shape-tools button{font-size:12px;padding:7px 10px;min-height:32px}.stage-shape-tools .shape-repair{margin:0}.stage-shape-tools .donor-review-card{margin:0}.stage-shape-tools .shape-source{display:none}.stage-shape-tools .tool-help{margin:6px 0 0;line-height:1.5}
+.eye-gizmo .eye-pick{fill:transparent;stroke:transparent;pointer-events:all;cursor:pointer;stroke-width:1.5;vector-effect:non-scaling-stroke}.eye-gizmo .eye-pick:hover,.eye-gizmo .eye-pick:focus{fill:#5268d812;stroke:#5268d8;outline:none}
+#mouthDirectArt{cursor:pointer}
+.stage-shape-tools .shape-tools button{flex:0 0 auto;white-space:nowrap}#eyeEditor>.row{display:none}
+@media(max-width:1120px){.stage-shape-tools{margin:0 12px 8px}.stage-shape-tools button{padding:6px 7px;font-size:11px}}
+.shape-assist-dialog{box-sizing:border-box;width:min(588px,calc(100vw - 40px));max-height:calc(100dvh - 40px);overflow:auto;border:1px solid #cbd3e4;border-radius:16px;padding:24px;color:#243652;background:white}
+.shape-assist-dialog::backdrop{background:#17274666}
+.shape-assist-dialog textarea{box-sizing:border-box;width:100%;min-height:90px;margin:8px 0}
+.shape-assist-dialog .row{flex-wrap:wrap}
+.correction-dialog{width:min(660px,calc(100vw - 32px));max-width:min(660px,calc(100vw - 32px))}
+.correction-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}.correction-heading h2{margin:0}
+.correction-pair{display:grid;grid-template-columns:minmax(0,1fr) 24px minmax(0,1fr);align-items:center;gap:10px;margin:20px 0}.correction-pair[hidden]{display:none}
+.correction-pair figure{margin:0;min-width:0}.correction-pair figcaption{font-size:13px;color:var(--muted);margin-bottom:8px;text-align:center}.correction-pair img{display:block;width:100%;border-radius:12px;border:1px solid var(--line);box-sizing:border-box}.correction-arrow{color:var(--muted);text-align:center;font-size:22px}
+.correction-decisions{display:flex;gap:10px;margin-top:18px}.correction-decisions>button{flex:1}.correction-undo{margin-top:14px;font-size:12px}
+
+/* Shape actions belong to the right inspector, next to their settings. */
+#tab-edit .stage-shape-tools{margin:0 0 16px;padding:12px;background:white}#tab-edit .stage-shape-row>strong{flex-basis:100%;margin-bottom:4px}#tab-edit .stage-shape-row>.correction-active{width:100%;margin-top:8px}#tab-edit .stage-shape-tools .tool-help{margin-top:10px}#edit-eyes>section:has(#blinkTest){display:none}
+
+#tab-edit .stage-shape-row>[data-start],#tab-edit .stage-shape-row>[data-assist-shape]{flex:1;min-width:0}
+
+/* Keep tools, history, preview and completion in stable rows while editing. */
+#tab-edit .stage-shape-row>.correction-active{display:flex;flex-direction:column;align-items:stretch;gap:10px;margin-top:0}
+body[data-eye-review=true] #eyesGuide .correction-active,body[data-mouth-review=true] #mouthGuide .correction-active{display:none}
+.stage-shape-tools .shape-tools,.stage-shape-tools .shape-history{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.stage-shape-tools .shape-tools button,.stage-shape-tools .shape-history button{min-width:0;padding:7px 4px}
+.stage-shape-tools .shape-view{border-top:1px solid var(--line);padding-top:10px}
+.stage-shape-tools .shape-view button,.stage-shape-tools .shape-repair button{width:100%}
+.stage-shape-tools .shape-view button[aria-pressed=true]{color:var(--muted);background:#f4f6fb}
+
+.shape-stage-preview .shape-history{display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px}
+.shape-stage-preview .shape-view{margin:10px 0}.shape-stage-preview .shape-view button{font-size:12px}
+.shape-stage-preview .shape-history button{font-size:12px;padding:6px 10px}
+.shape-stage-preview .shape-history[hidden],.shape-stage-preview .shape-view[hidden]{display:none}
+.stage-shape-tools .shape-numbers{margin:0!important;padding:10px 0;border-top:1px solid var(--line)}
+.stage-shape-tools .shape-numbers>summary{cursor:pointer;font-size:12px;color:var(--muted)}
+.stage-shape-tools .shape-numbers>label{display:block;margin:12px 0}
+.stage-shape-tools .shape-numbers>.coordinate-row{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+.stage-shape-tools .shape-numbers>.coordinate-row>label{flex:1 1 40%;min-width:0}
+.stage-shape-tools .shape-numbers input{box-sizing:border-box;max-width:100%}
+.stage-shape-tools .shape-repair .donor-review-card{display:grid;grid-template-columns:1.4fr 1fr;gap:8px}
+.stage-shape-tools .shape-repair button{min-width:0}
+.stage-shape-tools .shape-repair button:first-of-type{color:white;background:var(--accent);border-color:var(--accent)}
+
+.stage-shape-tools .shape-thickness{display:block;margin:12px 0 18px;width:100%}
+.stage-shape-tools [hidden]{display:none!important}
+.stage-shape-tools .shape-tools[data-single=true]{grid-template-columns:minmax(0,1fr)}
+.stage-shape-tools .shape-numbers>.coordinate-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+.stage-shape-tools .shape-numbers>.coordinate-row>label{width:auto;min-width:0}

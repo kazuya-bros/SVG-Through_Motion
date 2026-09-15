@@ -1,0 +1,46 @@
+<!doctype html><meta charset="utf-8"><title>Integration export verification</title>
+<style>body{font:16px sans-serif;margin:24px}canvas{width:320px;border:1px solid #aaa}pre{white-space:pre-wrap}button{padding:12px}</style>
+<h1>Integration export verification</h1><button id="run">Run package round-trip</button><button id="mpng">Run MPNG export (1 second)</button><pre id="status">Ready</pre><div id="view"></div>
+<script type="module">
+import {exportCharacterPackage,loadCharacterPackage} from './character-package.js';
+import {prepareCanvasRenderer} from './canvas-renderer.js?v=mouth-editor-9';
+import {prepareCharacterRuntime,characterPose} from './character-runtime.js';
+import {sampleMotionSettings} from './natural-motion.js';
+import {exportMpng} from './mpng-export.js';
+import {ensureSeamRig} from './seam-rig.js';
+const status=document.querySelector('#status'),view=document.querySelector('#view');
+const progress=s=>status.textContent=s;
+async function sample(){const p=await (await fetch('./samples/teth/project.json')).json();p.settings=sampleMotionSettings(p.settings);await ensureSeamRig(p);return p;}
+async function request(url,options){const r=await fetch(url,options);if(!r.ok)throw Error(await r.text());return r;}
+document.querySelector('#run').onclick=async()=>{
+ let original,restored;
+ try{
+ const p=await sample(),result=await exportCharacterPackage(p,{request,progress});
+ const loaded=await loadCharacterPackage(new Map(result.files),{build:result.manifest.runtime.build});
+ original=await prepareCanvasRenderer({...p,settings:{...p.settings,background:'transparent'}},1024,{supersample:2});
+ restored=await prepareCharacterRuntime(loaded.scene,{maxEdge:1024,supersample:2});
+ view.replaceChildren(original.canvas,restored.canvas);
+ let max=0,changed=0;
+ for(let i=0;i<180;i++){
+  const input={timeSeconds:i/30,speech:{active:i>=40&&i<110,mouth:i>=40&&i<110?(Math.sin(i)+1)/2:0,vowel:'u'}};
+  original.draw(characterPose(input.timeSeconds,p.settings,input));restored.render(input);
+  const a=original.canvas.getContext('2d').getImageData(0,0,1024,1024).data,b=restored.canvas.getContext('2d').getImageData(0,0,1024,1024).data;
+  for(let j=0;j<a.length;j++){const d=Math.abs(a[j]-b[j]);max=Math.max(max,d);if(d)changed++;}
+  if(i%10===0){progress(`Comparing frame ${i+1}/180`);await new Promise(r=>setTimeout(r,0));}
+ }
+ const saved=await (await request('/api/exports/qa-spritalk-roundtrip.zip',{method:'POST',body:result.blob})).json();
+ const evidence={kind:'spritalk',frames:180,maxChannelDifference:max,changedChannels:changed,assets:result.manifest.assets.length,bytes:result.blob.size,saved};
+ progress(JSON.stringify(evidence,null,2));await request('/api/exports/qa-integration-result.json',{method:'POST',body:JSON.stringify(evidence)});
+ if(max>1)throw Error('Package renderer pixels differ beyond one quantization level');
+ }catch(e){progress('FAIL '+e.stack);}finally{original?.dispose();restored?.dispose();}
+};
+document.querySelector('#mpng').onclick=async()=>{
+ try{
+ const p=await sample();p.settings.duration=1;
+ const result=await exportMpng(p,{request,progress});
+ const saved=await (await request('/api/exports/qa-mpng.zip',{method:'POST',body:result.blob})).json();
+ progress(JSON.stringify({kind:'mpng',bytes:result.blob.size,frames:result.track.frames.length,saved},null,2));
+ const video=document.createElement('video');video.src=URL.createObjectURL(new Blob([result.files.find(([n])=>n==='idle.webm')[1]],{type:'video/webm'}));video.controls=true;video.loop=true;video.style.width='480px';view.replaceChildren(video);
+ }catch(e){progress('FAIL '+e.stack);}
+};
+</script>

@@ -1,0 +1,15 @@
+<!doctype html><meta charset="utf-8"><title>前髪素材の修正版を検証</title><style>body{font:14px system-ui;margin:20px}main{display:grid;grid-template-columns:1fr 1fr;gap:10px}canvas{width:100%;height:170px;object-fit:contain}h2{font-size:14px;margin:5px}</style><pre id="result">検証中…</pre><main id="views"></main>
+<script type="module">
+import {sanitizeSvg} from './assets.js';import {svgSignature,rasterProject} from './raster-source.js';import {prepareCanvasRenderer} from './canvas-renderer.js?v=mouth-editor-9';
+const out=document.querySelector('#result'),log=[],check=(ok,text)=>{if(!ok)throw Error(text);log.push('PASS '+text);out.textContent=log.join('\n');};
+try{
+ const before=await(await fetch('/api/exports/591c7ce973664430b4a3eeec378e7e05/khaula-motion.project.json')).json(),fixed=await(await fetch('/api/exports/6ca68ff83668499f8e5a9094e358e5f4/khaula-motion.project.json')).json();
+ const part=fixed.parts.find(p=>p.deformGroup==='front');part.svgText=sanitizeSvg(part.svgText,'front-source-');part.rasterSignature=await svgSignature(part.svgText);
+ check(JSON.stringify(before.settings)===JSON.stringify(fixed.settings),'モーション・目口補正・強度の設定を保持');
+ for(const p of before.parts){const q=fixed.parts.find(v=>v.id===p.id);if(p.id===part.id){for(const key of ['x','y','width','height','hairControl','hairStrands','motionStrength','pivotX','pivotY'])check(JSON.stringify(p[key])===JSON.stringify(q[key]),'前髪の調整を保持 '+key);}else{const expected=structuredClone(p);if(p.blinkOverlay||p.faceOverlay)expected.visible=false;check(JSON.stringify(q)===JSON.stringify(expected),'他の素材を保持 '+p.id);}}
+ const pixelProject=await rasterProject(fixed);check(pixelProject.parts.find(p=>p.id===part.id).svgText.includes('<image'),'前髪はSee-ThroughのPNGで描画');check(part.svgText.includes('<path')&&!part.svgText.includes('<image'),'SVG出力にも同じPSD由来の形を用意');
+ const a=structuredClone(before),b=structuredClone(fixed);a.settings={...a.settings,rigEnabled:false};b.settings={...b.settings,rigEnabled:false};const ra=await prepareCanvasRenderer(a),rb=await prepareCanvasRenderer(b);
+ for(const blink of [0,.43,1])for(const [r,label] of [[ra,'変更前'],[rb,'See-Through前髪']]){r.draw({blinkL:blink,blinkR:blink,mouth:1});const div=document.createElement('div'),title=document.createElement('h2'),c=document.createElement('canvas');title.textContent=label+' / '+Math.round(blink*100)+'%';c.width=640;c.height=270;c.getContext('2d').drawImage(r.canvas,350,250,320,135,0,0,640,270);div.append(title,c);document.querySelector('#views').append(div);}ra.dispose();rb.dispose();
+ const saved=await(await fetch('/api/exports/khaula-motion.project.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(fixed)})).json();if(!saved.url)throw Error(JSON.stringify(saved));out.dataset.saved=saved.url;check(true,'修正版を別のプロジェクトとして保存');document.body.dataset.result='pass';
+}catch(e){out.textContent+='\nFAIL '+e.stack;document.body.dataset.result='fail';}
+</script>

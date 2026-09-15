@@ -1,0 +1,13 @@
+<!doctype html><meta charset="utf-8"><title>閉じ目の下地を比較</title><style>body{font:14px system-ui;background:#eef1f5;margin:20px}main{display:grid;grid-template-columns:1fr 1fr;gap:14px}canvas{width:100%;background:white}h2{font-size:14px;margin:8px 0}p{line-height:1.7}</style><h1>閉じ目の線と下地を切り分け</h1><p>左：現在の下地 ／ 右：目の周囲だけSee-Throughの顔素材で補修<br>上段：閉じ目を表示 ／ 下段：目のパーツを隠して下地だけ確認</p><pre id="result">準備中…</pre><main id="views"></main>
+<script type="module">
+import {prepareCanvasRenderer} from './canvas-renderer.js?v=mouth-editor-9';
+try{
+ const p=await(await fetch('/api/exports/8ebb0a37f5534fa5b9e0b76d10df96ed/khaula-motion.project.json')).json();p.settings={...p.settings,rigEnabled:false,renderSource:'original',background:'white',vowels:false};const q=structuredClone(p);
+ const blob=await(await fetch('/api/exports/5e5b7684e81e4f8696a20717ad92e019/core-eye-repair.png')).blob();const url=await new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result);f.readAsDataURL(blob);});q.parts.find(v=>v.deformGroup==='core').rasterSourceUrl=url;
+ for(const bare of [false,true])for(const [source,name] of [[p,'現在'],[q,'下地を補修']]){
+  const project=structuredClone(source);if(bare)project.parts.filter(v=>/^(white|iris|lash)-/.test(v.role)||v.blinkOverlay).forEach(v=>v.visible=false);
+  const renderer=await prepareCanvasRenderer(project);renderer.draw({blinkL:1,blinkR:1,mouth:1});const section=document.createElement('section'),h=document.createElement('h2'),c=document.createElement('canvas');h.textContent=name+(bare?' ／ 下地のみ':' ／ 閉じ目');c.width=720;c.height=320;c.getContext('2d').drawImage(renderer.canvas,355,280,310,137.78,0,0,720,320);section.append(h,c);document.querySelector('#views').append(section);renderer.dispose();
+ }
+ document.querySelector('#result').textContent='比較用プレビュー。元のプロジェクトは変更していません。';document.body.dataset.result='pass';
+}catch(e){document.querySelector('#result').textContent=e.stack;}
+</script>

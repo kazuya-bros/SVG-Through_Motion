@@ -1,0 +1,14 @@
+.export-progress{box-sizing:border-box;width:min(460px,calc(100vw - 32px));padding:32px;border:1px solid #d7deee;border-radius:18px;background:#fff;color:#28384c;box-shadow:0 24px 80px #16243a40;text-align:center}
+.export-progress::backdrop{background:#17253e80}
+.export-progress h2{font-size:21px;line-height:1.5;margin:16px 0;outline:none}
+.export-progress-message{font-size:16px;line-height:1.6;min-height:26px;margin:12px 0}
+.export-progress progress{display:block;width:100%;height:14px;accent-color:#5365dc;margin:20px 0}
+.export-progress-note{font-size:12px;line-height:1.8;color:#66758c;margin:18px 0}
+.export-progress-mark{width:34px;height:34px;margin:0 auto;border:4px solid #e5e9fc;border-top-color:#5365dc;border-radius:50%;animation:export-spin 1s linear infinite}
+.export-progress[data-state] .export-progress-mark{animation:none;border:0;width:auto;height:auto;font-size:32px}
+.export-progress[data-state=completed] .export-progress-mark::before{content:'✓';color:#258278}
+.export-progress[data-state=failed] .export-progress-mark::before{content:'!';color:#b34f45}
+.export-progress-file{display:block;margin:18px 0;padding:12px;border-radius:8px;background:#eff2ff;color:#4155c3;overflow-wrap:anywhere}
+.export-progress button{margin-top:8px;padding:12px}
+@keyframes export-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.export-progress-mark{animation:none}}

@@ -1,0 +1,35 @@
+<!doctype html><meta charset="utf-8"><title>Face限定の顎・PSD差分の検証</title>
+<style>body{font:14px sans-serif;background:#eee}main{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}figure{margin:0;background:white}canvas{width:100%}pre{white-space:pre-wrap}</style>
+<h1>Face限定の顎・PSDの閉じ目と閉じ口</h1><pre id="result">準備中</pre><main></main>
+<script type="module">
+import {prepareCanvasRenderer} from './canvas-renderer.js';
+import {animatedSvg,applyPose} from './motion.js';
+import {sanitizeSvg} from './assets.js';
+import {normalizeRig} from './rig.js';
+const log=t=>document.querySelector('#result').textContent+='\n'+t;
+const parse=s=>new DOMParser().parseFromString(s,'image/svg+xml').documentElement;
+const show=(source,label)=>{const f=document.createElement('figure'),c=document.createElement('canvas');c.width=420;c.height=400;c.getContext('2d').drawImage(source,300,220,420,400,0,0,420,400);f.append(label,c);document.querySelector('main').append(f);};
+try{
+ const p=await(await fetch('./samples/teth/project.json')).json();p.settings={...p.settings,rigEnabled:true,independentHair:true,background:'white'};p.rig=normalizeRig(p.rig,p);
+ for(const [i,a]of p.parts.entries())a.svgText=sanitizeSvg(a.svgText,`qajaw${i}-`);
+ const poses=[{mouth:0,blinkL:0,blinkR:0},{mouth:1,blinkL:0,blinkR:0},{mouth:0,blinkL:1,blinkR:1}];
+ const renderer=await prepareCanvasRenderer(p,1024);let neck=null,chin=null;
+ for(const [i,pose]of poses.entries()){
+  renderer.draw(pose);show(renderer.canvas,'Canvas '+['閉じ口','開口と顎','閉じ目・閉じ口'][i]);const ctx=renderer.canvas.getContext('2d');
+  const pixels=ctx.getImageData(300,494,420,250).data;if(neck&&neck.some((v,j)=>v!==pixels[j]))throw Error('Canvas: 首または服が口に追従');neck=pixels;
+  const jaw=ctx.getImageData(470,457,100,35).data;if(i===1&&chin.every((v,j)=>v===jaw[j]))throw Error('Canvas: 顎が動いていない');chin=jaw;
+ }
+ log('PASS Canvas: 顎は動き、首・服の画素は完全一致');
+ const root=parse(animatedSvg(p,p.settings,parse));root.querySelectorAll('animate,animateTransform').forEach(n=>n.remove());neck=null;chin=null;
+ for(const [i,pose]of poses.entries()){
+  applyPose(root,pose,p);const im=new Image();im.src=URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(root)],{type:'image/svg+xml'}));await im.decode();
+  const c=document.createElement('canvas');c.width=c.height=1024;const ctx=c.getContext('2d');ctx.drawImage(im,0,0);show(c,'SVG '+['閉じ口','開口と顎','閉じ目・閉じ口'][i]);
+  const pixels=ctx.getImageData(300,494,420,250).data;if(neck&&neck.some((v,j)=>v!==pixels[j]))throw Error('SVG: 首または服が口に追従');neck=pixels;
+  const jaw=ctx.getImageData(470,457,100,35).data;if(i===1&&chin.every((v,j)=>v===jaw[j]))throw Error('SVG: 顎が動いていない');chin=jaw;
+  URL.revokeObjectURL(im.src);
+ }
+ log('PASS SVG: 顎は動き、首・服の画素は完全一致');
+ if(root.querySelectorAll('[filter^="url(#jaw-local-"]').length!==1)throw Error('Face以外に顎フィルターが適用');
+ log('PASS 顎の対象はFace 1枚のみ / PSD差分3点');renderer.dispose();
+}catch(e){log('FAIL '+e.stack);}
+</script>

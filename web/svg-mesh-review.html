@@ -1,0 +1,20 @@
+<!doctype html><html lang="ja"><meta charset="utf-8"><title>SVG描画検証</title><style>body{font:14px system-ui;margin:20px;background:#eef1f5;color:#203047}main{display:flex;gap:20px}img{width:520px;height:520px;background:white}canvas{width:220px;height:220px;background:white}pre{white-space:pre-wrap}</style>
+<h1>SVG描画検証</h1><pre id="status">検証中</pre><main id="review"></main><script type="module">
+import {animatedSvg,sceneSvg} from './motion.js';import {normalizeRig} from './rig.js';
+const parse=text=>new DOMParser().parseFromString(text,'image/svg+xml').documentElement;
+const load=async text=>{const image=new Image(),url=URL.createObjectURL(new Blob([text],{type:'image/svg+xml'}));image.src=url;await image.decode();return image;};
+const fixture={name:'半透明の継ぎ目',width:120,height:120,settings:{duration:4,rigEnabled:true,rigMode:'stable',headTilt:4,headNod:3,bodyFollow:.2},parts:[{id:'p',role:'static',x:0,y:0,width:120,height:120,visible:true,opacity:.5,svgText:'<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120"><rect width="120" height="120" fill="#cc4422"/></svg>'}]};fixture.rig=normalizeRig({},fixture);
+let bad=0,min=255,max=0;
+const fixtureSVG=parse(animatedSvg(fixture,fixture.settings,parse));document.body.append(fixtureSVG);fixtureSVG.pauseAnimations();
+for(const time of [0,.13,.75,1.23,2.2,3.8]){
+ fixtureSVG.setCurrentTime(time);await new Promise(requestAnimationFrame);const copy=fixtureSVG.cloneNode(true);
+ const original=[...fixtureSVG.querySelectorAll('*')],clones=[...copy.querySelectorAll('*')];
+ for(let i=0;i<original.length;i++){const n=original[i],c=clones[i];if(n.querySelector(':scope > animateTransform')){let m=new DOMMatrix();for(let j=0;j<n.transform.animVal.numberOfItems;j++)m=m.multiply(n.transform.animVal.getItem(j).matrix);c.setAttribute('transform',`matrix(${m.a} ${m.b} ${m.c} ${m.d} ${m.e} ${m.f})`);}if(n.tagName==='polygon'&&n.querySelector('animate'))c.setAttribute('points',Array.from({length:n.animatedPoints.numberOfItems},(_,j)=>{const p=n.animatedPoints.getItem(j);return `${p.x},${p.y}`;}).join(' '));}
+ copy.querySelectorAll('animate,animateTransform').forEach(n=>n.remove());const image=await load(new XMLSerializer().serializeToString(copy)),canvas=document.createElement('canvas');canvas.width=canvas.height=120;canvas.getContext('2d').drawImage(image,0,0);const pixels=canvas.getContext('2d').getImageData(0,0,120,120).data;
+ for(let y=20;y<100;y++)for(let x=20;x<100;x++){const a=pixels[(y*120+x)*4+3];min=Math.min(min,a);max=Math.max(max,a);if(a<126||a>130)bad++;}if(time===.75)document.querySelector('#review').append(canvas);
+}fixtureSVG.remove();if(bad)throw Error(`半透明の継ぎ目が${bad}ピクセル残っています`);
+const project=await(await fetch('./samples/teth/project.json')).json();project.settings={...project.settings,independentHair:true,frontHairMethod:'spring',backHairMethod:'wave',frontHair:8,backHair:16,headTilt:2,headNod:1,duration:4};
+const before=(sceneSvg(project).match(/data-channel=/g)||[]).length,t=performance.now(),result=animatedSvg(project,project.settings,parse),elapsed=performance.now()-t;
+const image=await load(result);document.querySelector('#review').append(image);
+document.querySelector('#status').textContent=JSON.stringify({alphaRange:[min,max],seamPixels:bad,channelsBefore:before,animationsAfter:(result.match(/<animate(?:Transform)?\b/g)||[]).length,svgBytes:new Blob([result]).size,buildMs:Math.round(elapsed)},null,2);
+</script></html>

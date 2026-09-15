@@ -1,0 +1,27 @@
+<!doctype html><meta charset="utf-8"><title>閉じ目の傾きの検証</title><style>body{font:14px sans-serif}canvas{max-width:100%}pre{white-space:pre-wrap}</style><pre id="result">実行中</pre><div id="pictures"></div><script type="module">
+import {prepareCanvasRenderer} from './canvas-renderer.js?v=video-quality-1';
+import {sanitizeSvg} from './assets.js';
+import {loopPose} from './motion.js?v=mouth-1';
+const log=t=>document.querySelector('#result').textContent+='\n'+t;
+const sig=t=>t.replace(/\bid="[^"]*"/g,'id="ref"').replace(/url\(#[^)]+\)/g,'url(#ref)').replace(/\bhref="#[^"]+"/g,'href="#ref"');
+async function save(blob,name){const r=await fetch('/api/exports/'+name,{method:'POST',body:blob});if(!r.ok)throw Error(await r.text());log((await r.json()).path);}
+try{
+ const id=new URLSearchParams(location.search).get('project');
+ const p=await(await fetch('/api/exports/'+id+'/khaula-motion.project.json')).json();
+ const source=await(await fetch('/api/projects/'+p.id)).json();
+ const old=structuredClone(p);let count=0;
+ for(const part of p.parts.filter(p=>p.role.startsWith('lash-'))){
+  const src=source.parts.find(q=>q.name===part.name);
+  if(sig(sanitizeSvg(src.legacyClosedSvgText,'old-'))!==sig(sanitizeSvg(part.closedSvgText,'current-')))throw Error('旧素材の一致失敗 '+part.name);
+  part.closedSvgText=sanitizeSvg(src.closedSvgText,'new-'+part.id+'-');count++;
+ }
+ if(count!==2)throw Error('両目更新失敗');log('PASS 左右の既存生成素材が一致、新しい形へ更新');
+ const before=await prepareCanvasRenderer(old,1024),after=await prepareCanvasRenderer(p,1024);
+ const pose={...loopPose(.89,p.settings),blinkL:1,blinkR:1,mouth:0};before.draw(pose);after.draw(pose);
+ const sheet=document.createElement('canvas');sheet.width=1000;sheet.height=500;const c=sheet.getContext('2d');c.fillStyle='white';c.fillRect(0,0,1000,500);c.font='22px sans-serif';c.fillStyle='#31533b';c.fillText('修正前',20,32);c.fillText('修正後：元のまつ毛の傾き',520,32);
+ [before,after].forEach((r,i)=>c.drawImage(r.canvas,350,190,330,300,i*500,48,500,452));document.querySelector('#pictures').append(sheet);
+ await save(await new Promise(r=>sheet.toBlob(r)),'eyelid-tilt-comparison.png');
+ await save(await new Promise(r=>after.canvas.toBlob(r)),'closed-eyes.png');
+ log('PASS 共通Canvas描画で閉眼フレームを出力');log('ALL PASS');
+}catch(e){log('FAIL '+e.stack);}
+</script>

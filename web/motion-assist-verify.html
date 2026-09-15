@@ -1,0 +1,37 @@
+<!doctype html><meta charset="utf-8"><title>AI制作の動きまでを検証</title><style>body{font:14px system-ui}iframe{width:960px;height:900px}pre{white-space:pre-wrap}</style><pre id="result">検証中…</pre><iframe id="app"></iframe>
+<script type="module">
+const f=document.querySelector('#app'),out=document.querySelector('#result'),wait=ms=>new Promise(r=>setTimeout(r,ms)),lines=[];
+const check=(ok,label)=>{if(!ok)throw Error(label);lines.push('PASS '+label);out.textContent=lines.join('\n');};
+const json=async(url,body)=>{const r=await fetch(url,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});if(!r.ok)throw Error(await r.text());return r.json();};
+const command=async body=>{let r=await json('/api/control/commands',body);for(let i=0;i<500&&r.status==='running';i++){await wait(50);r=await json(r.result_url||'/api/control/commands/'+r.id);}if(r.status!=='completed')throw Error(JSON.stringify(r));return r.result;};
+const assist=(operation,values={})=>command({action:'assist',assist:{operation,operation_id:crypto.randomUUID(),...values}});
+try{
+ f.src='/?project='+new URLSearchParams(location.search).get('project');
+ for(let i=0;i<300&&!f.contentDocument?.querySelector('.eye-pick');i++)await wait(100);
+ const w=f.contentWindow,d=f.contentDocument,$=id=>d.getElementById(id);
+ // No audible playback is needed for testing the editing bridge.
+ w.AudioContext.prototype.resume=()=>Promise.resolve();
+ const original={sway:$('sway').value,engine:$('engine').value,gain:$('gain').value};
+ $('workspaceMode').click();$('editorOutputDetails').open=true;$('liveConnect').click();
+ for(let i=0;i<100&&!(await json('/api/control/status')).connected;i++)await wait(100);
+ const start=await assist('start',{mode:'from_inputs'}),sid=start.session_id;
+ check(start.workflow.auto_apply&&!!start.motion,'最初からの依頼は動きの編集と自動反映が有効');
+ const motion=await assist('motion',{session_id:sid,revision:0,settings:{sway:2.2,breathe:2,blink:true}});
+ check($('sway').value===original.sway,'候補の動きは確認完了まで元の編集を変えない');
+ const edited=await assist('edit',{session_id:sid,revision:motion.revision,part_id:'p003',values:{y:2}});
+ await assist('review',{session_id:sid,revision:edited.revision});
+ const finished=await assist('finish',{session_id:sid,revision:edited.revision,assessment:{status:'pass',notes:'Synthetic workflow verification',evidence:['review-07.png','review-11.png']}});
+ check(finished.applied&&d.body.dataset.task==='motion','finishで反映し動きをつける画面へ戻る');
+ check($('sway').value==='2.2'&&!$('motionAssistResult').hidden,'調整した動きと完了確認ボタンを表示');
+ check($('engine').value===original.engine&&$('gain').value===original.gain,'TTSエンジンと音声設定を維持');
+ check((await json('/api/runtime/sessions')).length===0,'出力ウィンドウを自動起動しない');
+ $('motionAssistResult').querySelector('[data-retry]').click();await wait(250);
+ const dialog=d.querySelector('dialog[aria-labelledby=shapeAssistTitle]');
+ check(dialog.open&&dialog.textContent.includes('目・口と動き'),'もう一回でも目・口と動きの範囲を維持');
+ dialog.querySelector('[data-close]').click();$('motionAssistResult').querySelector('[data-undo]').click();
+ for(let i=0;i<100&&$('sway').value!==original.sway;i++)await wait(50);
+ check($('sway').value===original.sway&&$('motionAssistResult').hidden,'取り消すと動きを含めて元に戻る');
+ check($('tab-motion').scrollWidth<=$('tab-motion').clientWidth+1,'960px幅で確認ボタンがはみ出さない');
+ $('liveDisconnect').click();document.body.dataset.result='pass';
+}catch(e){out.textContent+='\nFAIL '+e.stack;document.body.dataset.result='fail';}
+</script>

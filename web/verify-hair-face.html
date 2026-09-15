@@ -1,0 +1,31 @@
+<!doctype html><meta charset="utf-8"><title>まつ毛・前髪・上下向きの検証</title><style>body{font:14px sans-serif}canvas{max-width:100%}pre{white-space:pre-wrap}</style><pre id="result">実行中</pre><div id="pictures"></div><script type="module">
+import {prepareCanvasRenderer} from './canvas-renderer.js?v=hair-face-3';
+import {sanitizeSvg} from './assets.js';
+import {svgSignature} from './raster-source.js';
+import {loopPose} from './motion.js?v=hair-face-3';
+import {mesh,triangleMatrix} from './rig.js?v=hair-face-3';
+const log=t=>document.querySelector('#result').textContent+='\n'+t;
+async function save(blob,name){const r=await fetch('/api/exports/'+name,{method:'POST',body:blob});if(!r.ok)throw Error(await r.text());const v=await r.json();log(v.path);return v;}
+async function load(id){const p=await(await fetch('/api/exports/'+id+'/khaula-motion.project.json')).json();for(const [i,part] of p.parts.entries()){part.svgText=sanitizeSvg(part.svgText,'s'+i+'-');for(const k of ['closedSvgText','openSvgText'])if(part[k])part[k]=sanitizeSvg(part[k],'d'+i+k+'-');}return p;}
+try{
+ const q=new URLSearchParams(location.search),p=await load(q.get('project')),old=await load(q.get('before'));
+ for(const id of p.hairRepairParts){const part=p.parts.find(p=>p.id===id);part.rasterSignature=await svgSignature(part.svgText);}
+ delete p.hairRepairParts;
+ const before=await prepareCanvasRenderer(old,1024),after=await prepareCanvasRenderer(p,1024);
+ const pose={...loopPose(2.88,p.settings),blinkL:1,blinkR:1,mouth:0};before.draw(pose);after.draw(pose);
+ const sheet=document.createElement('canvas');sheet.width=1000;sheet.height=500;const c=sheet.getContext('2d');c.fillStyle='white';c.fillRect(0,0,1000,500);c.font='22px sans-serif';c.fillStyle='#31533b';c.fillText('修正前',20,32);c.fillText('修正後：下向きのまつ毛・前髪の境界',510,32);
+ [before,after].forEach((r,i)=>c.drawImage(r.canvas,350,190,330,300,i*500,48,500,452));document.querySelector('#pictures').append(sheet);await save(await new Promise(r=>sheet.toBlob(r)),'hair-lash-comparison.png');
+ const turns=document.createElement('canvas');turns.width=1000;turns.height=600;const t=turns.getContext('2d');t.fillStyle='white';t.fillRect(0,0,1000,600);t.fillStyle='#31533b';t.font='22px sans-serif';
+ for(const [i,pitch] of [-1,1].entries()){after.draw({...pose,blinkL:0,blinkR:0,pitch});t.drawImage(after.canvas,260,90,500,560,i*500,40,500,560);t.fillText(pitch<0?'下向き':'上向き',i*500+20,30);}
+ document.querySelector('#pictures').append(turns);await save(await new Promise(r=>turns.toBlob(r)),'face-pitch-comparison.png');
+ let minimum=Infinity;
+ for(const pitch of [-1,1])for(let i=0;i<16;i++)for(const tri of mesh(p)){const m=triangleMatrix(tri,p,{...loopPose(i/4,p.settings),pitch});minimum=Math.min(minimum,m[0]*m[3]-m[1]*m[2]);}
+ if(minimum<=0)throw Error('メッシュが反転');log('PASS 実素材の上下向き・ループで反転なし: '+minimum.toFixed(3));
+ const back=p.parts.find(p=>p.deformGroup==='back');let localMinimum=Infinity;
+ back.hairControl={rootY:650,tipY:753,centerX:800,radius:82};
+ for(let i=0;i<16;i++)for(const tri of mesh(p)){const m=triangleMatrix(tri,p,{...loopPose(i/4,p.settings),pitch:1});localMinimum=Math.min(localMinimum,m[0]*m[3]-m[1]*m[2]);}
+ delete back.hairControl;
+ if(localMinimum<=0)throw Error('局所的な髪のメッシュが反転');log('PASS 狭い髪範囲でも反転なし: '+localMinimum.toFixed(3));
+ const saved=await save(new Blob([JSON.stringify(p)],{type:'application/json'}),'khaula-motion.project.json');log('PROJECT '+saved.url);log('ALL PASS');
+}catch(e){log('FAIL '+e.stack);}
+</script>

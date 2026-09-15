@@ -1,0 +1,101 @@
+#editingWorkspace{grid-template-rows:62px minmax(0,1fr);grid-template-columns:224px minmax(260px,1fr) 334px}
+#workflowNav{grid-column:1/-1;grid-row:1;display:flex;flex-direction:row;align-items:stretch;gap:6px;padding:7px 18px;background:white;border-bottom:1px solid var(--line);min-width:0;overflow-x:auto}
+#workflowNav button{flex:1;justify-content:center;text-align:left;gap:9px;padding:8px 12px;white-space:nowrap;border-radius:7px}
+#workflowNav button small{display:none}#workflowNav .step-number{display:inline-block;padding:3px 5px}#workflowNav button strong{font-size:13px}
+#workflowNav[hidden],.secondary-navigation[hidden]{display:none!important}
+.secondary-navigation{grid-column:1/-1;grid-row:1;display:flex;align-items:center;gap:12px;padding:7px 18px;min-width:0;background:white;border-bottom:1px solid var(--line)}
+#liveNav{background:#f5f7fc}#liveNav button{flex:1;min-width:0}#liveNav button.active{background:#e9edfd;border-color:#d7defb;color:#344fb4}
+#creationReturn strong{font-size:14px;color:var(--muted)}#creationReturn button{white-space:nowrap}
+.motion-destinations{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;margin:20px 0 24px}
+.motion-destinations button{min-width:0;padding:12px 6px;font-size:12px}
+.motion-destinations{grid-template-columns:1fr}.motion-destinations h3{font-size:13px;margin:0 0 3px}.motion-destinations button{text-align:left;padding:12px 14px}.motion-destinations strong,.motion-destinations small{display:block}.motion-destinations small{font-size:10px;line-height:1.6;margin-top:4px;opacity:.85}
+body[data-workspace-mode=live] #workspaceMode{color:var(--accent);border-color:var(--accent)}
+.workflow-actions{flex-shrink:0;display:flex;flex-direction:column;gap:10px;padding:14px 18px;background:var(--panel);border-top:1px solid var(--line)}
+.workflow-actions button{width:100%;min-height:40px}
+#projectFinishStatus{margin:0;font-size:12px;line-height:1.6;color:var(--accent-dark)}
+/* Keep native hover painting and scrollbar changes from shifting the controls. */
+.inspector-scroll{scrollbar-gutter:stable}
+.motion-page{min-height:var(--motion-page-height,420px);box-sizing:border-box}
+#tab-motion{overflow-anchor:none}
+.right-panel input[type=range]{appearance:none;display:block;box-sizing:border-box;height:16px;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;transition:none}
+.right-panel input[type=range]::-webkit-slider-runnable-track{height:4px;border:0;border-radius:4px;background:linear-gradient(to right,var(--accent) var(--range-progress,0%),#dfe5ec var(--range-progress,0%))}
+.right-panel input[type=range]::-webkit-slider-thumb{appearance:none;width:16px;height:16px;margin-top:-6px;border:0;border-radius:50%;background:var(--accent);box-shadow:none;transition:none}
+.right-panel input[type=range]::-moz-range-track{height:4px;border:0;border-radius:4px;background:#dfe5ec}
+.right-panel input[type=range]::-moz-range-progress{height:4px;border-radius:4px;background:var(--accent)}
+.right-panel input[type=range]::-moz-range-thumb{width:16px;height:16px;border:0;border-radius:50%;background:var(--accent);box-shadow:none}
+.right-panel input[type=range]:disabled{opacity:.45;cursor:not-allowed}
+.right-panel .context-tabs button{appearance:none;transition:none}
+@media(max-width:760px){.secondary-navigation{padding:7px 8px;gap:6px}.secondary-navigation button{font-size:12px}#creationReturn strong{font-size:12px}}
+#editingWorkspace>.left-panel{grid-column:1;grid-row:2;padding:0 10px 10px;position:static;max-height:none}
+#editingWorkspace>.center-panel{grid-column:2;grid-row:2}
+#editingWorkspace>.right-panel{grid-column:3;grid-row:2}
+body:not([data-task=edit]) #editingWorkspace{grid-template-columns:minmax(260px,1fr) 334px}
+body:not([data-task=edit]) #editingWorkspace>.left-panel{display:none}
+body:not([data-task=edit]) #editingWorkspace>.center-panel{grid-column:1}
+body:not([data-task=edit]) #editingWorkspace>.right-panel{grid-column:2}
+#layerPalette{display:flex;flex-direction:column;flex:1;min-height:0;max-height:none;margin:0;padding:0;border:0}
+#layerPalette>h3{display:flex;align-items:center;justify-content:space-between;flex-shrink:0;padding:18px 6px 0;margin:0;font-size:14px}
+.layer-instruction{font-size:11px;color:var(--muted);margin:9px 6px 14px;flex-shrink:0}
+.layer-text{flex:1;min-width:0}.layer-grip{flex-shrink:0;color:#9aa7bc;font-size:16px;line-height:1;width:9px}
+#layerPalette .layer{position:relative;cursor:grab;touch-action:none;user-select:none}
+#layerPalette .layer .layer-name{max-width:100%}
+#layerPalette .layer.dragging{opacity:.4}#layerPalette .sorting,#layerPalette .sorting .layer{cursor:grabbing}
+#layerPalette .layer.drop-before::before,#layerPalette .layer.drop-after::after{content:'';position:absolute;left:0;right:0;height:3px;background:var(--accent);border-radius:3px;z-index:1;pointer-events:none}
+#layerPalette .layer.drop-before::before{top:-2px}#layerPalette .layer.drop-after::after{bottom:-2px}
+#layerPalette .layer:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+#layerPalette>.layers{min-height:0;max-height:none;overflow:auto;flex:1}
+#layerPalette .layer{gap:7px;padding:7px 5px}#layerPalette .layer img{width:30px;height:30px}#layerPalette .layer .layer-name{max-width:140px;font-size:11px}#layerPalette .layer .layer-role{display:block;font-size:9px}
+@media(min-width:1600px){#editingWorkspace{grid-template-columns:244px minmax(400px,1fr) 360px}body:not([data-task=edit]) #editingWorkspace{grid-template-columns:minmax(400px,1fr) 360px}}
+@media(max-width:1120px){#editingWorkspace{grid-template-columns:190px minmax(260px,1fr) 304px}body:not([data-task=edit]) #editingWorkspace{grid-template-columns:minmax(260px,1fr) 304px}#workflowNav{padding:7px 12px}#workflowNav button{padding:7px;gap:5px}#workflowNav button strong{font-size:12px}#layerPalette .layer .layer-name{max-width:107px}}
+@media(max-width:760px){#editingWorkspace{display:grid;height:auto;min-height:0;grid-template-columns:minmax(0,1fr);grid-template-rows:62px auto auto auto}body:not([data-task=edit]) #editingWorkspace{grid-template-columns:minmax(0,1fr);grid-template-rows:62px auto auto}#workflowNav{padding:7px 8px;gap:4px}#workflowNav button{min-width:135px;flex:1 0 auto}#editingWorkspace>.left-panel{grid-column:1;grid-row:2;max-height:200px;height:200px;border-right:0;border-bottom:1px solid var(--line)}#editingWorkspace>.center-panel{grid-column:1;grid-row:3;height:720px;min-height:640px}#editingWorkspace>.right-panel{grid-column:1;grid-row:4;border-left:0;border-top:1px solid var(--line)}body:not([data-task=edit]) #editingWorkspace>.center-panel{grid-column:1;grid-row:2}body:not([data-task=edit]) #editingWorkspace>.right-panel{grid-column:1;grid-row:3}#layerPalette .layer .layer-name{max-width:none}#editingWorkspace .inspector-scroll{overflow:visible}}
+
+/* The launch screen has no editing or input-device navigation. */
+body[data-workspace-mode=live] #editingWorkspace{grid-template-rows:minmax(0,1fr)}
+body[data-workspace-mode=live] #editingWorkspace>.center-panel,body[data-workspace-mode=live] #editingWorkspace>.right-panel{grid-row:1}
+body[data-workspace-mode=live] .stage-toolbar,body[data-workspace-mode=live] .timeline,body[data-workspace-mode=live] .center-panel>.statusbar,body[data-workspace-mode=live] #tab-live>p{display:none}
+body[data-workspace-mode=live] .stage{margin:20px}
+#runtimeTts-ttsHint{display:block}
+.runtime-launch-options{display:grid;gap:10px;margin-top:26px}
+.runtime-launch-options button{display:flex;justify-content:space-between;align-items:center;min-height:46px;text-align:left;color:var(--accent);border-color:#d0d8fb;background:#f7f8ff}
+.runtime-launch-options button:hover{background:#ecefff;border-color:var(--accent)}
+#runtimeLauncher #outputConfig{margin-bottom:24px}
+.runtime-voice-preview{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:18px}
+.runtime-voice-preview button{min-width:0;min-height:38px}
+
+body[data-workspace-mode=live] .stage-footer{display:none}
+body[data-workspace-mode=live] .stage{background:var(--runtime-preview-background,repeating-conic-gradient(#e6eaf1 0% 25%,#f6f7fa 0% 50%) 50%/22px 22px)}
+body[data-task=edit] .mouth-history{display:none}
+.save-menu-dialog{width:min(460px,calc(100vw - 40px));border:1px solid var(--line);border-radius:16px;padding:26px;color:var(--text)}
+.save-menu-dialog::backdrop{background:#19243d66}
+.save-menu-dialog h2{font-size:20px;margin-top:0}.save-menu-dialog p{font-size:13px;line-height:1.8}
+.save-menu-actions{display:grid;gap:10px}.save-menu-actions button{width:100%}#saveMenuError{color:#ad4035}
+.save-receipt{position:fixed;z-index:40;right:20px;bottom:20px;box-sizing:border-box;width:min(400px,calc(100% - 32px));margin:0;padding:18px 42px 18px 20px;border:1px solid #cbd6f4;background:#f6f8ff;border-radius:12px;box-shadow:0 6px 24px #243a6020;font-size:13px;line-height:1.8;text-align:left}
+.save-receipt strong{display:block;font-size:14px}.save-receipt p{margin:8px 0 0}
+#dismissSaveReceipt{position:absolute;top:8px;right:8px;width:32px;height:32px;padding:0;border:0;background:transparent;color:var(--text);font-size:22px;line-height:1;transform:none}
+@media(max-width:600px){.save-receipt{right:16px;bottom:16px}}
+.saved-thumbnail{width:120px;height:140px;object-fit:contain;border:1px solid var(--line);border-radius:10px;background:repeating-conic-gradient(#e6eaf1 0% 25%,#f6f7fa 0% 50%) 50%/16px 16px}
+
+.game-purpose{display:grid;gap:10px;margin:16px 0 22px}.game-purpose label{display:flex;align-items:flex-start;gap:9px;margin:0;padding:13px;border:1px solid var(--line);border-radius:9px;cursor:pointer}.game-purpose label.active{border-color:var(--accent);background:#f4f6ff}.game-purpose input{width:auto!important;margin:3px 0!important}.game-purpose strong,.game-purpose small{display:block}.game-purpose small{margin-top:6px;font-size:11px;line-height:1.7;color:var(--muted)}
+.export-render-details{margin:12px 0}
+.hair-motion-shape{margin:20px 0;padding-top:18px;border-top:1px solid var(--line)}
+.hair-motion-shape>label,#strandFields>label{display:block;margin:14px 0}
+#strandFields>.row{margin:12px 0}
+
+.hair-group{margin:16px 0;padding:14px;border:1px solid var(--line);border-radius:9px}.hair-group>label{display:block;margin:12px 0}.hair-group .slider-label{margin:15px 0!important}.hair-group h3{margin-bottom:10px}
+#pivotPicker{position:absolute;z-index:12;cursor:crosshair;touch-action:none;pointer-events:auto;outline:none;padding:0}
+#pivotPicker:focus-visible{outline:2px solid #a5aff4;outline-offset:-2px}
+.pivot-picker-actions{position:absolute;z-index:15;left:12px;right:12px;bottom:28px;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:8px;padding:10px;background:#fffffff2;border:1px solid var(--line);border-radius:10px;font-size:12px}
+.pivot-picker-actions span{flex:1;min-width:180px}.pivot-picker-actions button{min-height:34px}
+#armMotionControls>label,#earsAccessoryControls>label{display:block;margin:16px 0}
+
+.preview-loading{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;width:100%;height:100%;color:#687b97;font-size:13px}.preview-loading small{font-size:11px}.rig-preview.preview-reveal{animation:preview-reveal .18s ease-out}@keyframes preview-reveal{from{opacity:0}to{opacity:1}}@media(prefers-reduced-motion:reduce){.rig-preview.preview-reveal{animation:none}}
+.integration-card{margin:18px 0;padding:16px;border:1px solid var(--line);border-radius:12px;background:#fff}.integration-card h3{margin:0 0 10px}.integration-card p{font-size:12px;line-height:1.8}.integration-card .integration-availability{padding:9px 11px;background:#eef1ff;border-radius:7px;color:#5263aa;font-size:11px}.integration-card button{margin-top:6px}#materialParts{margin-top:10px}#externalOutputs>h2{margin-top:10px}
+
+/* Categories stay within reach while tuning long groups of controls. */
+#tab-motion>.motion-categories{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));position:sticky;top:0;z-index:4;box-shadow:0 6px 0 white;margin:0 0 20px;padding:4px}
+#tab-motion>.motion-categories button{grid-column:span 2}
+#tab-motion>.motion-categories button:nth-last-child(-n+2){grid-column:span 3}
+#tab-motion>.motion-categories button{min-height:34px}
+.motion-preset-actions{margin-bottom:12px}
+#tab-motion .motion-page{min-height:0}
+#tab-motion .control-card h3{scroll-margin-top:130px}

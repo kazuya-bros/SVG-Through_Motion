@@ -1,0 +1,20 @@
+<!doctype html><meta charset="utf-8"><title>閉じ目編集・房制御の検証</title><style>body{font:14px sans-serif}canvas{max-width:100%}pre{white-space:pre-wrap}</style><pre id="result">実行中</pre><div id="pictures"></div><script type="module">
+import {prepareCanvasRenderer} from './canvas-renderer.js?v=editable-rig-5';
+import {loopPose} from './motion.js?v=editable-rig-5';
+import {mesh,triangleMatrix} from './rig.js?v=editable-rig-5';
+const log=t=>document.querySelector('#result').textContent+='\n'+t;
+async function load(id){return (await fetch('/api/exports/'+id+'/khaula-motion.project.json')).json();}
+async function save(canvas,name){const blob=await new Promise(r=>canvas.toBlob(r));const r=await fetch('/api/exports/'+name,{method:'POST',body:blob});if(!r.ok)throw Error(await r.text());log((await r.json()).path);}
+try{
+ const q=new URLSearchParams(location.search),p=await load(q.get('lid')),before=structuredClone(p);for(const part of before.parts)delete part.lidAdjust;
+ const a=await prepareCanvasRenderer(before,1024),b=await prepareCanvasRenderer(p,1024),pose={...loopPose(0,p.settings),blinkL:0,blinkR:0};a.draw(pose);b.draw(pose);
+ const x=a.canvas.getContext('2d').getImageData(0,0,1024,1024).data,y=b.canvas.getContext('2d').getImageData(0,0,1024,1024).data;
+ if(!x.every((v,i)=>v===y[i]))throw Error('閉じ目の編集が開眼時にも影響');log('PASS 開眼時の全ピクセル一致');
+ a.draw({...pose,blinkL:1,blinkR:1});b.draw({...pose,blinkL:1,blinkR:1});
+ const sheet=document.createElement('canvas');sheet.width=1000;sheet.height=460;const c=sheet.getContext('2d');c.fillStyle='white';c.fillRect(0,0,1000,460);c.fillStyle='#31533b';c.font='22px sans-serif';c.fillText('元の閉じ目',20,30);c.fillText('画面左の高さ・カーブ・太さを変更',510,30);
+ [a,b].forEach((r,i)=>c.drawImage(r.canvas,350,200,330,280,i*500,40,500,420));document.querySelector('#pictures').append(sheet);await save(sheet,'editable-eyelids.png');
+ const hair=await load(q.get('hair'));let det=Infinity;
+ for(const method of ['wave','spring']){hair.settings.hairMethod=method;for(let i=0;i<32;i++)for(const t of mesh(hair)){const m=triangleMatrix(t,hair,loopPose(i/8,hair.settings));det=Math.min(det,m[0]*m[3]-m[1]*m[2]);}}
+ if(det<=0)throw Error('房の変形で反転');log('PASS 実素材の3房、両方式、32時点の最小行列式 '+det.toFixed(3));log('ALL PASS');
+}catch(e){log('FAIL '+e.stack);}
+</script>

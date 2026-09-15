@@ -1,0 +1,30 @@
+<!doctype html><html lang="ja"><meta charset="utf-8"><title>母音とバネの検証</title><style>body{font:14px sans-serif}canvas{max-width:100%}pre{white-space:pre-wrap}</style><pre id="result">実行中</pre><div id="pictures"></div><script type="module">
+import {prepareCanvasRenderer} from './canvas-renderer.js?v=mouth-1';
+import {sceneSvg,applyPose,animatedSvg} from './motion.js?v=mouth-1';
+import {normalizeRig,mesh,triangleMatrix,rigPose,sharedOffset} from './rig.js?v=mouth-1';
+import {sanitizeSvg} from './assets.js';
+const out=document.querySelector('#result'),log=t=>out.textContent+='\n'+t,assert=(v,t)=>{if(!v)throw Error(t);log('PASS '+t);};
+const parse=t=>new DOMParser().parseFromString(t,'image/svg+xml').documentElement;
+async function save(blob,name){const r=await fetch('/api/exports/'+name,{method:'POST',body:blob});if(!r.ok)throw Error(await r.text());const s=await r.json();log(s.path);}
+try{
+ const query=new URLSearchParams(location.search),id=query.get('project');
+ const p=await(await fetch('/api/exports/'+id+'/khaula-motion.project.json')).json();p.rig=normalizeRig(p.rig,p);
+ p.parts.forEach((part,i)=>{part.svgText=sanitizeSvg(part.svgText,'v'+i+'-');for(const kind of ['openSvgText','closedSvgText'])if(part[kind])part[kind]=sanitizeSvg(part[kind],'v'+i+kind+'-');});
+ p.settings={...p.settings,rigEnabled:true,hairMethod:'spring',springCycles:1,springSoftness:.5,vowels:true,talking:true,...(query.has('anime')?{mouthStyle:'anime',mouthOffsetY:6}:{})};
+ const renderer=await prepareCanvasRenderer(p,1024),sheet=document.createElement('canvas');sheet.width=1200;sheet.height=250;const ctx=sheet.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,1200,250);
+ const mouth=p.parts.find(v=>v.role==='mouth'),transformations=[];
+ for(const [i,vowel] of ['a','i','u','e','o'].entries()){
+  const pose={mouth:1,vowel};renderer.draw(pose);ctx.drawImage(renderer.canvas,320,230,410,340,i*240,0,240,200);ctx.fillStyle='#31533b';ctx.font='24px sans-serif';ctx.textAlign='center';ctx.fillText('あいうえお'[i],i*240+120,232);
+  const svg=parse(sceneSvg(p));applyPose(svg,pose,p);transformations.push(p.settings.mouthStyle==='anime'?svg.querySelector('[data-channel="anime-outline"]').getAttribute('d'):svg.querySelector('[data-channel="mouth-open"]').getAttribute('transform'));
+  const im=new Image(),url=URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)],{type:'image/svg+xml'}));
+  try{im.src=url;await im.decode();const c=document.createElement('canvas');c.width=c.height=1024;c.getContext('2d').drawImage(im,0,0);const a=c.getContext('2d').getImageData(mouth.x-16,mouth.y-16,mouth.width+32,mouth.height+32).data,b=renderer.canvas.getContext('2d').getImageData(mouth.x-16,mouth.y-16,mouth.width+32,mouth.height+32).data;let diff=0;for(let k=0;k<a.length;k++)diff+=Math.abs(a[k]-b[k]);diff/=a.length;assert(diff<8,vowel+' の口領域でSVGとCanvas一致: '+diff.toFixed(3));}finally{URL.revokeObjectURL(url);}
+ }
+ assert(new Set(transformations).size===5,'5母音すべて別の形');document.querySelector('#pictures').append(sheet);await save(await new Promise(r=>sheet.toBlob(r)),'five-vowels.png');
+ let peak=0;for(let i=0;i<360;i++)peak=Math.max(peak,Math.abs(sharedOffset(100,980,p,{hairPhase:i/360*Math.PI*2})[0]));log('後ろ髪の実変位（100,980）片側 '+peak.toFixed(2)+' px');
+ let min=Infinity;const saved={...p.settings};for(const cycles of [1,2,4])for(const softness of [0,.5,1]){p.settings={...saved,frontHair:6,backHair:18,armSwing:2,headTilt:8,headNod:8,bodyFollow:1,springCycles:cycles,springSoftness:softness};for(let i=0;i<30;i++)for(const t of mesh(p)){const [a,b,c,d]=triangleMatrix(t,p,rigPose(i/30*p.settings.duration,p.settings));min=Math.min(min,a*d-b*c);}}
+ assert(min>0,'実素材の最大設定でも折り返しなし: '+min.toFixed(3));p.settings=saved;
+ const animated=animatedSvg(p,p.settings,parse),root=parse(animated);assert([...root.querySelectorAll('animate,animateTransform')].every(a=>{const v=a.getAttribute('values').split(';');return v[0]===v.at(-1);}), '母音とバネのSVGループ端が一致');
+ const animatedMouth=root.querySelector(p.settings.mouthStyle==='anime'?'[data-channel="anime-outline"] animate':'[data-channel="mouth-open"] animateTransform');assert(new Set(animatedMouth.getAttribute('values').split(';')).size>=5,'単体SVGにも母音の輪郭変化を格納');
+ await save(new Blob([animated],{type:'image/svg+xml'}),'spring-vowels.svg');log('ALL PASS');
+}catch(e){log('FAIL '+e.stack);}
+</script></html>

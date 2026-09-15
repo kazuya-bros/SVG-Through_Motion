@@ -1,0 +1,11 @@
+data/
+qa/
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+output/
+*.log
+.env
+.env.*
+!.env.example

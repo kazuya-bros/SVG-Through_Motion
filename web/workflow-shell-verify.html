@@ -1,0 +1,30 @@
+<!doctype html><meta charset="utf-8"><title>作成・配信の画面分離を検証</title><style>body{font:14px system-ui}iframe{width:1100px;height:900px}pre{white-space:pre-wrap}</style><pre id="result">検証中…</pre><iframe id="app" src="/?project=dac0ba6e1f5a4d498c06cb5448a95c3f"></iframe>
+<script type="module">
+const f=document.querySelector('#app'),out=document.querySelector('#result'),wait=ms=>new Promise(r=>setTimeout(r,ms)),lines=[];
+const check=(ok,label)=>{if(!ok)throw Error(label);lines.push('PASS '+label);out.textContent=lines.join('\n');};
+try{
+ for(let i=0;i<300&&!f.contentDocument?.querySelector('.eye-pick');i++)await wait(100);
+ const w=f.contentWindow,d=f.contentDocument,$=id=>d.getElementById(id),visible=e=>!!e?.getClientRects().length;
+ let mediaRequests=0;w.navigator.mediaDevices.getUserMedia=async()=>{mediaRequests++;throw Error('Test: unexpected media request');};
+ const tabs=[...$('workflowNav').querySelectorAll('[role=tab]')];
+ check(tabs.length===3&&tabs.map(b=>b.dataset.tab).join(',')==='edit,motion,export','作成フローは整える・動かす・書き出しの3工程');
+ check(!$('exportTop').closest('.topbar')&&$('exportTop').closest('#workflowActions'),'次へを右下の固定エリアに配置');
+ $('editNext').click();const sway=$('sway').value;
+ check(visible($('exportTop'))&&visible($('motionVoice')),'動かすから書き出しと任意の音声へ進める');
+ $('exportTop').click();check(d.body.dataset.task==='export'&&!visible($('creationReturn'))&&visible($('workflowNav'))&&!visible($('liveNav')),'書き出しは03の工程として表示');
+ tabs[1].click();check(d.body.dataset.task==='motion','書き出しから動かすへ戻れる');
+ $('motionVoice').click();check(d.body.dataset.workspaceMode==='create'&&visible($('legacy-voice'))&&!visible($('microphoneMount')),'動画用の音声は作成側の任意画面');
+ $('backToMotion').click();$('exportTop').click();$('workspaceMode').click();
+ check(d.body.dataset.task==='live'&&!visible($('workflowNav'))&&visible($('liveNav'))&&$('workspaceMode').textContent==='作成に戻る','ヘッダーから配信画面に切り替わる');
+ const mic=d.querySelector('[data-live-page=mic]');mic.click();
+ check(d.body.dataset.task==='mic'&&visible($('microphoneMount'))&&!visible($('legacy-voice')),'配信のマイク画面にはマイク操作を表示');
+ mic.dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true}));
+ check(d.body.dataset.task==='tracking'&&visible($('startTracking'))&&d.activeElement.dataset.livePage==='tracking','配信タブは矢印キーでもカメラへ移動できる');
+ $('workspaceMode').click();check(d.body.dataset.task==='export'&&$('sway').value===sway,'作成に戻ると元の工程と設定を維持');
+ $('workspaceMode').click();check(d.body.dataset.task==='tracking','再び配信を開くと直前の配信画面へ戻る');
+ check(mediaRequests===0,'画面を開くだけではマイク・カメラを起動しない');
+ $('workspaceMode').click();f.style.width='960px';await wait(150);
+ check($('workflowNav').scrollWidth<=$('workflowNav').clientWidth+1&&$('tab-motion').scrollWidth<=$('tab-motion').clientWidth+1,'狭い画面でも工程と出力ボタンがはみ出さない');
+ document.body.dataset.result='pass';
+}catch(e){out.textContent+='\nFAIL '+e.stack;document.body.dataset.result='fail';}
+</script>

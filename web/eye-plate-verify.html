@@ -1,0 +1,20 @@
+<!doctype html><meta charset="utf-8"><title>目元の下地補修を確認</title><style>body{font:14px system-ui;margin:12px;background:#eef1f5}main{display:grid;grid-template-columns:1fr 1fr;gap:6px}canvas{width:100%;height:145px;object-fit:contain;background:white}h2{font-size:13px;margin:2px}pre{max-height:65px;overflow:auto}button{padding:10px}</style><pre id="result">検証中…</pre><button id="save" disabled>補修版を別に保存</button><main id="views"></main>
+<script type="module">
+import {sanitizeSvg} from './assets.js';import {svgSignature,rasterProject} from './raster-source.js';import {prepareCanvasRenderer} from './canvas-renderer.js?v=mouth-editor-9';
+const params=new URLSearchParams(location.search),beforeId=params.get('before'),afterId=params.get('after'),out=document.querySelector('#result'),log=[];
+const check=(ok,label)=>{if(!ok)throw Error(label);log.push('PASS '+label);out.textContent=log.join('\n');};
+try{
+ if(![beforeId,afterId].every(v=>/^[a-f0-9]{32}$/.test(v)))throw Error('Project IDs required');
+ const read=async id=>(await fetch(`/api/exports/${id}/khaula-motion.project.json`)).json();
+ const before=await read(beforeId),fixed=await read(afterId),core=fixed.parts.find(p=>p.deformGroup==='core');
+ core.svgText=sanitizeSvg(core.svgText,'skin-repair-');core.rasterSignature=await svgSignature(core.svgText);
+ check(JSON.stringify(before.settings)===JSON.stringify(fixed.settings),'設定を保持');
+ for(const p of before.parts){const q=fixed.parts.find(v=>v.id===p.id);if(p.id!==core.id)check(JSON.stringify(p)===JSON.stringify(q),'素材と補正を保持 '+p.id);else for(const k of ['x','y','width','height','opacity','visible','pivotX','pivotY','motionStrength'])check(JSON.stringify(p[k])===JSON.stringify(q[k]),'下地の配置を保持 '+k);}
+ check((await rasterProject(fixed)).parts.find(p=>p.id===core.id).svgText.includes('<image'),'補修PNGを描画');check(core.svgText.includes('<path'),'SVGにも補修を反映');
+ for(const state of [{blink:0,name:'開き目'},{blink:.43,name:'途中 43%'},{blink:1,name:'閉じ目'},{blink:1,bare:true,name:'下地のみ'}]){
+  for(const [p,label] of [[before,'変更前'],[fixed,'補修後']]){const q=structuredClone(p);q.settings={...q.settings,rigEnabled:false};if(state.bare)q.parts.filter(v=>/^(white|iris|lash)-/.test(v.role)).forEach(v=>v.visible=false);const r=await prepareCanvasRenderer(q);r.draw({blinkL:state.blink,blinkR:state.blink,mouth:1});const div=document.createElement('div'),h=document.createElement('h2'),c=document.createElement('canvas');h.textContent=label+' / '+state.name;c.width=720;c.height=270;c.getContext('2d').drawImage(r.canvas,350,280,320,120,0,0,720,270);div.append(h,c);document.querySelector('#views').append(div);r.dispose();}
+ }
+ document.body.dataset.result='pass';document.querySelector('#save').disabled=false;
+ document.querySelector('#save').onclick=async()=>{const s=await(await fetch('/api/exports/khaula-motion.project.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(fixed)})).json();if(!s.url)throw Error(JSON.stringify(s));out.dataset.saved=s.url;check(true,'別保存完了');document.querySelector('#save').disabled=true;};
+}catch(e){out.textContent+='\nFAIL '+e.stack;document.body.dataset.result='fail';}
+</script>

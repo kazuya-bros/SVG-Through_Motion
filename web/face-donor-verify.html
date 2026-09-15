@@ -1,0 +1,28 @@
+<!doctype html><meta charset="utf-8"><title>PSD donor rendering verification</title><pre id="result">検証中…</pre><div id="samples"></div>
+<script type="module">
+import {sceneSvg,applyPose,animatedSvg} from './motion.js?v=mouth-editor-9';
+import {prepareCanvasRenderer} from './canvas-renderer.js?v=mouth-editor-9';
+import {sanitizeSvg} from './assets.js';
+const shape=(color,x,w,h)=>`<svg xmlns="http://www.w3.org/2000/svg" width="30" height="20" overflow="visible"><rect x="${x}" y="2" width="${w}" height="${h}" fill="${color}"/></svg>`;
+const variants=Object.fromEntries(['a','i','u','e','o'].map((k,i)=>[k,sanitizeSvg(shape(['red','green','blue','orange','purple'][i],-4+i,20-i*3,12-i),k)]));
+const part={id:'p000',role:'mouth',mouthMode:'source-open',visible:true,opacity:1,x:25,y:30,width:30,height:20,svgText:shape('brown',0,20,12),closedSvgText:shape('black',-2,22,2),mouthVariants:variants};
+const p={version:1,width:80,height:80,parts:[part],settings:{duration:1,vowels:true,closedWidth:1,mouthTuning:{vowels:Object.fromEntries('aiueo'.split('').map(k=>[k,{width:1,height:1}]))}}};
+const parse=text=>new DOMParser().parseFromString(text,'image/svg+xml').documentElement,lines=[],check=(ok,label)=>{if(!ok)throw Error(label);lines.push('PASS '+label);};
+try{
+ const r=await prepareCanvasRenderer(p,320,{allowUpscale:true}),signatures=new Set();
+ for(const pose of [...'aiueo'.split('').map(vowel=>({mouth:1,vowel})),{mouth:1,vowelWeights:[.4,.6,0,0,0]},{mouth:.11,vowel:'u'},{mouth:.11,vowelWeights:[.4,.6,0,0,0]},{mouth:0,vowel:'i'}]){
+  const root=parse(sceneSvg(p,p.settings,false));applyPose(root,pose,p,p.settings);root.setAttribute('width',320);root.setAttribute('height',320);
+  const img=new Image(),url=URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(root)],{type:'image/svg+xml'}));img.src=url;await img.decode();
+  const c=document.createElement('canvas');c.width=c.height=320;c.getContext('2d').drawImage(img,0,0);URL.revokeObjectURL(url);r.draw(pose);
+  const a=c.getContext('2d').getImageData(0,0,320,320).data,b=r.canvas.getContext('2d').getImageData(0,0,320,320).data;let delta=0,mass=0;for(let i=0;i<a.length;i+=4){delta+=Math.abs(a[i+3]-b[i+3]);mass+=a[i+3];for(let k=0;k<3;k++){delta+=Math.abs(a[i+k]*a[i+3]/255-b[i+k]*b[i+3]/255);mass+=a[i+k]*a[i+3]/255;}}
+  // Bitmap downscaling and SVG rasterization differ at subpixel edges during closure.
+  check(delta/Math.max(1,mass)<(pose.mouth>0&&pose.mouth<1?.08:.001),`SVG / Canvas match ${JSON.stringify(pose)} difference=${(delta/Math.max(1,mass)).toFixed(4)}`);
+  if(pose.mouth===1&&pose.vowel)signatures.add(c.toDataURL());document.querySelector('#samples').append(c);
+ }
+ check(signatures.size===5,'all five PSD artworks are distinct');
+ const saved=JSON.parse(JSON.stringify(p));for(const k of 'aiueo')check(sanitizeSvg(saved.parts[0].mouthVariants[k],k+'-').includes('overflow="visible"'),'round-trip keeps registered '+k);
+ check(animatedSvg(p,p.settings,parse).includes('mouth-variant-p000-o'),'animated SVG includes donor channels');
+ r.dispose();document.body.dataset.result='pass';
+}catch(e){lines.push('FAIL '+e.stack);document.body.dataset.result='fail';}
+document.querySelector('#result').textContent=lines.join('\n');
+</script>

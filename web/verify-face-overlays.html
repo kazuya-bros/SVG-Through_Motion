@@ -1,0 +1,44 @@
+<!doctype html><meta charset="utf-8"><title>顔の上下向きと眉・まつ毛の追従確認</title>
+<style>body{font:14px sans-serif}canvas{max-width:100%}pre{white-space:pre-wrap}</style>
+<pre id="result">実行中</pre><div id="pictures"></div><script type="module">
+import {prepareCanvasRenderer} from './canvas-renderer.js?v=face-overlay-7';
+import {sanitizeSvg} from './assets.js';
+import {svgSignature} from './raster-source.js';
+import {loopPose} from './motion.js?v=face-overlay-7';
+import {mesh,triangleMatrix} from './rig.js?v=face-overlay-7';
+const log=t=>document.querySelector('#result').textContent+='\n'+t;
+async function save(blob,name){const r=await fetch('/api/exports/'+name,{method:'POST',body:blob});if(!r.ok)throw Error(await r.text());const v=await r.json();log(v.url);return v;}
+try{
+ const id=new URLSearchParams(location.search).get('project'),p=await(await fetch('/api/exports/'+id+'/khaula-motion.project.json')).json();
+ for(const [i,part] of p.parts.entries()){
+  part.svgText=sanitizeSvg(part.svgText,'s'+i+'-');
+  for(const k of ['closedSvgText','openSvgText'])if(part[k])part[k]=sanitizeSvg(part[k],'d'+i+k+'-');
+  if(p.faceRepairParts.includes(part.id))part.rasterSignature=await svgSignature(part.svgText);
+ }
+ delete p.faceRepairParts;
+ const r=await prepareCanvasRenderer(p,1024),sheet=document.createElement('canvas');sheet.width=1200;sheet.height=760;
+ const beforeId=new URLSearchParams(location.search).get('before');
+ if(beforeId){
+  const before=await(await fetch('/api/exports/'+beforeId+'/khaula-motion.project.json')).json();
+  const oldRenderer=await prepareCanvasRenderer(before,1024);
+  const neutral={...loopPose(0,p.settings),headRoll:0,bodyRoll:0,yaw:0,pitch:0,blinkL:0,blinkR:0,mouth:0};
+  oldRenderer.draw(neutral);r.draw(neutral);
+  const a=oldRenderer.canvas.getContext('2d').getImageData(0,0,1024,1024).data,b=r.canvas.getContext('2d').getImageData(0,0,1024,1024).data;
+  let peak=0,sum=0;for(let i=0;i<a.length;i++){const d=Math.abs(a[i]-b[i]);peak=Math.max(peak,d);sum+=d;}
+  log('正面の元絵との差：平均 '+(sum/a.length).toFixed(5)+' / 最大 '+peak+'（0～255）');
+  if(sum/a.length>.05)throw Error('正面の絵が過度に変わっています');
+ }
+ const c=sheet.getContext('2d');c.fillStyle='white';c.fillRect(0,0,1200,760);c.font='20px sans-serif';
+ let determinant=Infinity;
+ for(const [i,pitch] of [-1,0,1].entries())for(const [j,blink] of [0,1].entries()){
+  const pose={...loopPose(0,p.settings),headRoll:0,bodyRoll:0,yaw:.5,pitch,blinkL:blink,blinkR:blink,mouth:0};
+  r.draw(pose);c.drawImage(r.canvas,340,230,330,285,i*400,j*380+35,400,345);
+  c.fillStyle='#31533b';c.fillText(`上下 ${pitch} / ${blink?'閉眼':'開眼'}`,i*400+12,j*380+25);
+  for(const tri of mesh(p)){const m=triangleMatrix(tri,p,pose);determinant=Math.min(determinant,m[0]*m[3]-m[1]*m[2]);}
+ }
+ if(determinant<=0)throw Error('メッシュ反転');log('PASS 最小行列式 '+determinant.toFixed(3));
+ document.querySelector('#pictures').append(sheet);await save(await new Promise(r=>sheet.toBlob(r)),'face-overlays-pitch.png');
+ log('PROJECT '+(await save(new Blob([JSON.stringify(p)],{type:'application/json'}),'khaula-motion.project.json')).url);
+ log('ALL PASS');
+}catch(e){log('FAIL '+e.stack);}
+</script>

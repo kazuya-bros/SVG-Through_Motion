@@ -1,0 +1,79 @@
+<!doctype html><meta charset="utf-8"><title>作業エリアの直接編集を検証</title><style>body{font:14px system-ui}iframe{width:1200px;height:900px}pre{white-space:pre-wrap}</style><pre id="result">検証中…</pre><iframe id="app"></iframe>
+<script type="module">
+const f=document.querySelector('#app'),out=document.querySelector('#result'),wait=ms=>new Promise(r=>setTimeout(r,ms)),lines=[];
+const check=(ok,label)=>{if(!ok)throw Error(label);lines.push('PASS '+label);out.textContent=lines.join('\n');};
+f.src='/?project='+(new URLSearchParams(location.search).get('project')||'e6a4edc42bbd4ab286454ed9f68ef55c');
+try{
+ for(let i=0;i<300&&!f.contentDocument?.querySelector('.eye-pick');i++)await wait(100);
+ const w=f.contentWindow,d=f.contentDocument,$=id=>d.getElementById(id);
+ check(!$('mouthOffsetY')&&!$('closedWidth'),'重複する口の位置・幅の微調整メニューを廃止');
+ check(!$('editPrev')&&$('editNext').textContent==='次へ：動きをつける','下部は次工程へのボタン一つに統一');
+ $('editNext').click();check(d.body.dataset.task==='motion','目から次工程へ直接進める');
+ d.querySelector('#workflowNav [data-tab=edit]').click();
+ const eyeTab=$('editEyesTab'),mouthTab=$('editMouthTab');
+ mouthTab.click();check(d.body.dataset.editStep==='mouth'&&mouthTab.getAttribute('aria-selected')==='true','上の口タブで部位を切り替える');
+ eyeTab.click();check(d.body.dataset.editStep==='eyes'&&eyeTab.getAttribute('aria-selected')==='true','上の目タブで戻れる');
+ eyeTab.dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true}));
+ check(d.body.dataset.editStep==='mouth'&&d.activeElement===mouthTab&&mouthTab.tabIndex===0&&eyeTab.tabIndex===-1,'矢印キーでも口タブへ移動し選択とフォーカスが一致');
+ mouthTab.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Home',bubbles:true,cancelable:true}));
+ check(d.body.dataset.editStep==='eyes'&&d.activeElement===eyeTab,'Homeキーで目タブへ戻れる');
+ check($('eyesGuide').parentElement===$('edit-eyes')&&!d.querySelector('.correction-choices'),'症状別カードを廃止し右側にツールを配置');
+ check(d.querySelectorAll('.eye-pick').length===2&&+$('editEyeClosure').value===0,'開いた目から左右を直接選択できる');
+ d.querySelector('.eye-pick[data-eye="l"]').dispatchEvent(new w.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));await wait(150);
+ check($('lidSide').value==='l'&&+$('editEyeClosure').value===.78&&d.body.dataset.eyeReview==='false','目の選択で重ね表示と編集に入る');
+ check($('eyeDirectSvg').querySelectorAll('.transform-handle').length===8,'選んだ目に8つの変形ハンドルを表示');
+ check(d.querySelector('#eyesGuide [data-assist-shape]').hidden,'手動編集中はAI操作を表示しない');
+ const blend=d.querySelector('#eyesPreviewControl [data-pose=blend]'),done=$('eyesAdjustDonor'),doneY=done.getBoundingClientRect().y;
+ check(blend.getClientRects().length&&blend.disabled,'重ね表示中も表示ボタンの場所を保つ');
+ $('editEyeClosure').value=.2;$('editEyeClosure').dispatchEvent(new w.Event('input',{bubbles:true}));await wait(100);
+ check(blend.getClientRects().length&&!blend.disabled&&done.getBoundingClientRect().y===doneY,'スライダー操作で完了ボタンが移動しない');
+ blend.click();await wait(100);check(+$('editEyeClosure').value===.78,'固定の表示ボタンで重ね表示へ戻る');
+
+ const svg=$('eyeDirectSvg'),capture=svg.setPointerCapture;
+ svg.setPointerCapture=()=>{}; // Synthetic pointers have no browser capture slot.
+ const area=svg.querySelector('.transform-area'),rect=area.getBoundingClientRect(),ox=+$('lid-x').value;
+ area.dispatchEvent(new w.PointerEvent('pointerdown',{button:0,pointerId:91,clientX:rect.x+rect.width/2,clientY:rect.y+rect.height/2,bubbles:true}));
+ svg.dispatchEvent(new w.PointerEvent('pointermove',{pointerId:91,clientX:rect.x+rect.width/2+8,clientY:rect.y+rect.height/2,bubbles:true}));
+ svg.dispatchEvent(new w.PointerEvent('pointerup',{pointerId:91,bubbles:true}));svg.setPointerCapture=capture;await wait(150);
+ check(+$('lid-x').value!==ox,'編集枠をドラッグして目を移動');d.querySelector('#eyesPreviewControl [data-undo]').click();await wait(100);check(+$('lid-x').value===ox,'ドラッグを取り消して元の位置を保持');
+ const x=+$('lid-x').value;
+ d.body.dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));await wait(150);
+ check(+$('lid-x').value!==x,'選択した目の位置を変更できる');
+ d.querySelector('#eyesPreviewControl [data-undo]').click();await wait(150);check(+$('lid-x').value===x,'作業エリアの元に戻すが機能');
+ d.querySelector('#eyesPreviewControl [data-redo]').click();await wait(100);check(+$('lid-x').value!==x,'作業エリアのやり直すが機能');d.querySelector('#eyesPreviewControl [data-undo]').click();
+ const contour=d.querySelector('#eyesGuide [data-tool="contour"]');
+ if(!contour.hidden){contour.click();await wait(100);check(!!d.querySelector('#eyeDirectSvg [data-handle="curve"]'),'カーブツールで線上のハンドルを表示');check(!d.querySelector('#eyeDirectSvg [data-handle="width"],#eyeDirectSvg [data-handle="rotate"],#eyeDirectSvg [data-handle="thickness"]'),'カーブの画面上に幅・角度・太さのハンドルを混ぜない');}
+ const rangeEdit=(id,value)=>{const el=$(id);el.value=value;el.dispatchEvent(new w.Event('input',{bubbles:true}));el.dispatchEvent(new w.Event('change',{bubbles:true}));};
+ const eyeThickness=+$('lid-thickness').value,eyeDelta=eyeThickness>1.8?-.1:.1;
+ check($('lid-thickness').type==='range'&&$('lid-thickness').closest('#eyesGuide')&&!$('lid-thickness').closest('details'),'目の線幅は右側の折り畳み外にスライダーで表示');
+ rangeEdit('lid-thickness',eyeThickness+eyeDelta);rangeEdit('lid-thickness',eyeThickness+eyeDelta*2);await wait(100);
+ d.querySelector('#eyesPreviewControl [data-undo]').click();await wait(100);
+ check(Math.abs(+$('lid-thickness').value-eyeThickness-eyeDelta)<.001&&$('lid-thicknessOut').value===Math.round((eyeThickness+eyeDelta)*100)+'%','線幅の連続操作は1回ずつUndoでき、表示値も戻る');
+ d.querySelector('#eyesPreviewControl [data-undo]').click();await wait(80);check(+$('lid-thickness').value===eyeThickness,'目の線幅を元へ戻せる');
+ const scale=$('artboard').style.transform;$('stage').dispatchEvent(new w.WheelEvent('wheel',{deltaY:-80,bubbles:true,cancelable:true,clientX:500,clientY:350}));await wait(80);check($('artboard').style.transform!==scale,'ハンドル表示中もホイールで拡大');
+ $('eyesAdjustDonor').click();await wait(100);check(d.body.dataset.eyeReview==='true'&&d.querySelectorAll('.eye-pick').length===2,'完了すると開閉確認へ戻る');
+ const inputEdit=(id,value)=>{const el=$(id);el.dispatchEvent(new w.Event('focus'));el.value=value;el.dispatchEvent(new w.Event('input',{bubbles:true}));el.dispatchEvent(new w.Event('blur'));};
+ d.querySelector('#eyesGuide [data-start]').click();const savedX=+$('lid-x').value;inputEdit('lid-x',savedX+1);$('eyesAdjustDonor').click();
+ d.querySelector('#eyesGuide [data-start]').click();inputEdit('lid-x',savedX+3);$('eyesCancelEdit').click();await wait(100);
+ check(+$('lid-x').value===savedX+1&&d.body.dataset.eyeReview==='true','目のキャンセルは今回の編集だけ戻し、前回の完了を維持');
+ check($('eyeNumbers').closest('#eyesGuide')&&!d.querySelector('#eyesGuide [data-undo]'),'微調整はツール内、UndoとRedoは作業エリアへ分離');
+ mouthTab.click();for(let i=0;i<200&&!$('mouthPreparing').hidden;i++)await wait(100);
+ check($('mouthGuide').getClientRects().length&& !$('eyesGuide').getClientRects().length,'口の工程では口の作業ツールに切り替わる');
+ $('mouthDirectArt').querySelector('path').dispatchEvent(new w.PointerEvent('pointerdown',{button:0,bubbles:true}));await wait(120);
+ check(d.body.dataset.mouthReview==='false'&&+$('mouth').value===.06&&$('mouthDirectHandles').querySelectorAll('.transform-handle').length===8,'口の絵をクリックして閉じ口を直接編集');
+ const mouthCurve=+$('mouthEdit-curve').value;inputEdit('mouthEdit-curve',mouthCurve+2);$('mouthCancelEdit').click();await wait(100);
+ check(+$('mouthEdit-curve').value===mouthCurve&&d.body.dataset.mouthReview==='true','口のキャンセルで開始時の形へ戻る');
+ d.querySelector('#mouthGuide [data-start]').click();d.querySelector('#mouthGuide [data-tool=contour]').click();await wait(100);
+ check(!!$('mouthDirectHandles').querySelector('[data-handle=curve]')&&!$('mouthDirectHandles').querySelector('[data-handle=width],[data-handle=rotate],[data-handle=thickness]'),'口のカーブは線上のハンドルだけ表示');
+ check($('mouthEdit-thickness').type==='range'&&$('mouthEdit-thickness').closest('#mouthGuide')&&!$('mouthEdit-thickness').closest('details'),'口の線幅も右側の折り畳み外にスライダーで表示');
+ const mouthThickness=+$('mouthEdit-thickness').value;rangeEdit('mouthEdit-thickness',mouthThickness+.1);rangeEdit('mouthEdit-thickness',mouthThickness+.2);await wait(100);
+ d.querySelector('#mouthPreviewControl [data-undo]').click();await wait(100);check(Math.abs(+$('mouthEdit-thickness').value-mouthThickness-.1)<.001,'口の線幅も1回ずつUndoできる');
+ d.querySelector('#mouthPreviewControl [data-redo]').click();await wait(100);check(Math.abs(+$('mouthEdit-thickness').value-mouthThickness-.2)<.001,'口の線幅のRedoが機能');
+ $('mouthCancelEdit').click();await wait(100);check(+$('mouthEdit-thickness').value===mouthThickness,'キャンセルで口の線幅も開始時に戻る');
+ d.querySelector('#mouthGuide [data-start]').click();
+ $('mouthAdjustDonor').click();await wait(80);check(d.body.dataset.mouthReview==='true','口も完了で確認へ戻る');
+ check(!$('mouthTransition')&&!$('mouthNearSuggest'),'閉じかけの形の操作を表示しない');
+ $('editNext').click();check(d.body.dataset.task==='motion'&&!$('mouthGuide').getClientRects().length&&!$('eyesGuide').getClientRects().length,'口からも同じボタンで次工程へ進む');
+ document.body.dataset.result='pass';
+}catch(e){out.textContent+='\nFAIL '+e.stack;document.body.dataset.result='fail';}
+</script>

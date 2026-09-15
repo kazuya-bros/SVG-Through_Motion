@@ -1,0 +1,25 @@
+<!doctype html><html lang="ja"><meta charset="utf-8"><title>SVG-Through Motion mouth rendering verification</title>
+<style>body{font:14px system-ui;margin:30px}canvas{width:128px;height:128px;background:#eee}.case{display:inline-block;margin:8px;border:1px solid #ddd}#result{white-space:pre-wrap}</style>
+<h1>Closed / open mouth renderer parity</h1><p>左：SVG、右：素材・動画のCanvas描画</p><pre id="result">検証中</pre><div id="cases"></div>
+<script type="module">
+import {sceneSvg,applyPose} from './motion.js?v=mouth-editor-9';
+import {prepareCanvasRenderer} from './canvas-renderer.js?v=mouth-editor-9';
+const part={id:'p000',name:'mouth',role:'mouth',mouthMode:'source-open',x:24,y:44,width:80,height:40,visible:true,opacity:1,
+ svgText:'<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40" viewBox="0 0 80 40"><ellipse cx="40" cy="20" rx="30" ry="16" fill="#723b48"/><path d="M20 12 H60 L56 17 H24 Z" fill="white"/></svg>',
+ closedSvgText:'<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40"><path d="M10 20 L25 22 L40 24 L55 22 L70 20" fill="none" stroke="#302328" stroke-width="2"/></svg>'};
+const project={width:128,height:128,parts:[part],settings:{background:'transparent',vowels:false,closedWidth:.8,mouthTuning:{closed:{height:1.5,left:-2,right:2,curve:2,x:3,y:2,angle:9},open:{width:.8,height:.7,x:-3,y:4,angle:-8}}}};
+const summary=c=>{const data=c.getContext('2d').getImageData(0,0,128,128).data;let mass=0,x=0,y=0;for(let i=0;i<data.length;i+=4){const a=data[i+3];mass+=a;x+=(i/4%128)*a;y+=Math.floor(i/4/128)*a;}return {mass,x:x/mass,y:y/mass};};
+try{
+ const renderer=await prepareCanvasRenderer(project,128,{supersample:2}),lines=[];
+ for(const mouth of [0,.02,.08,.18,.5,1]){
+  const pose={mouth},root=new DOMParser().parseFromString(sceneSvg(project,project.settings,false),'image/svg+xml').documentElement;applyPose(root,pose,project,project.settings);
+  const url=URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(root)],{type:'image/svg+xml'}));
+  const img=new Image();img.src=url;await img.decode();const svg=document.createElement('canvas');svg.width=svg.height=128;svg.getContext('2d').drawImage(img,0,0);URL.revokeObjectURL(url);
+  renderer.draw(pose);const canvas=document.createElement('canvas');canvas.width=canvas.height=128;canvas.getContext('2d').drawImage(renderer.canvas,0,0);
+  const a=summary(svg),b=summary(canvas),distance=Math.hypot(a.x-b.x,a.y-b.y),mass=Math.abs(a.mass-b.mass)/a.mass;
+  const pass=distance<1&&mass<.16;lines.push(`${pass?'PASS':'FAIL'} open=${mouth}: center distance=${distance.toFixed(3)}px, ink difference=${(mass*100).toFixed(1)}%`);
+  const row=document.createElement('div');row.className='case';row.append(`${mouth}: `,svg,canvas);document.querySelector('#cases').append(row);
+ }
+ renderer.dispose();document.querySelector('#result').textContent=lines.join('\n');document.body.dataset.result=lines.every(s=>s.startsWith('PASS'))?'pass':'fail';
+}catch(e){document.querySelector('#result').textContent=e.stack;document.body.dataset.result='fail';}
+</script></html>

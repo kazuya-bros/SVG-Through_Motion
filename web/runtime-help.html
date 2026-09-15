@@ -1,0 +1,37 @@
+<!doctype html><html lang="ja"><meta charset="utf-8"><title>SVG-Through キャラクター発話API</title><style>body{max-width:850px;margin:40px auto;padding:0 20px;font:16px/1.8 system-ui;color:#273854}pre{background:#f1f4fa;padding:16px;overflow:auto}code{overflow-wrap:anywhere}</style><h1>キャラクター発話API</h1>
+<p>「キャラクターを使う」で音声エンジンと背景を選び、「AI・外部アプリで話す」を押してください。開いたウィンドウで発話の受付をオンにし、「AIへの指示サンプル」の文章をコピーして、ローカルアプリを操作できるAIに渡してください。接続先と操作手順も一緒にコピーされます。起動元の画面は閉じても使えます。APIの接続先は固定で、セッションIDは不要です。</p>
+<p>GET <code>/api/runtime/status</code> で状態を取得します。accepting・connected・ready がすべて true のときだけ送信してください。state は closed / starting / idle / synthesizing / speaking / stopping / error。character はキャラクター名、current.id は現在の発話IDです。</p>
+<p>新しく開いたキャラクターが接続先になります。別のウィンドウの受付をオンにすると、そちらに切り替わります。同時に受付するのは1体だけです。閉じても以前のウィンドウへ自動で切り替わりません。受付オフは新規の発話を拒否します。受理済みの発話は継続します。</p>
+<h2>待機中に話す</h2><p>POST <code>/api/runtime/speech</code></p>
+<pre>{"request_id":"新しい一意なID","action":"speak","text":"こんにちは。"}</pre>
+<h2>AIが必要と判断したときだけ割り込む</h2>
+<pre>{"request_id":"別の一意なID","action":"replace","expected_utterance_id":"確認したcurrent.id","text":"訂正します。こちらでした。"}</pre>
+<p>停止だけなら action を stop にし、text を省略します。発話が変わっていた場合や停止処理中は409を返します。状態を再確認してください。replace は停止確認後に次の音声生成・再生を始めます。古い生成結果は再生しません。エンジン内部の生成計算そのものの中止は保証しません。</p>
+<p>202は受付完了です。発話完了ではありません。GET <code>/api/runtime/speech/{request_id}</code> で結果を確認してください。completed は完了、failed / interrupted は失敗・中断です。通信結果が不明なら同じ request_id と同じ内容で再送します。接続先が変わっても、保持中の履歴にある発話を重複再生しません。固定APIは最大400件の履歴を保持し、サーバー再起動で消えます。履歴が404になった不明な発話は、自動で再送しないでください。</p>
+<p>発話は最大2000文字で、エンジンへは200文字以下に分割して渡します。409は受付オフ・未接続・発話中・対象発話の変更などです。状態を確認してから次の操作を判断してください。</p>
+<h2>Codex用スキル・プログラムからの利用</h2>
+<p><a href="/web/skills/svg-through-speak.zip" download>Codex用スキルZIP</a>を展開し、svg-through-speakフォルダをCodexのskillsフォルダに配置してください。<a href="/web/skills/svg-through-speak/SKILL.md">スキルの内容</a>も確認できます。発話クライアントは <a href="/web/skills/svg-through-speak/scripts/speak.py">speak.py</a>。Pythonの標準ライブラリだけで使用できます。</p>
+<pre>python speak.py --url http://127.0.0.1:8765 status
+python speak.py --url http://127.0.0.1:8765 speak --text "こんにちは。"
+python speak.py --url http://127.0.0.1:8765 result --request-id 返されたrequest_id</pre>
+<p>別のプログラムからも同じJSON APIを直接呼べます。TTSの選択、受付のオン、ウィンドウの起動は利用者が画面で行います。</p>
+<pre>const root = 'http://127.0.0.1:8765/api/runtime';
+const state = await (await fetch(root + '/status')).json();
+if (state.accepting &amp;&amp; state.connected &amp;&amp; state.ready &amp;&amp; state.state === 'idle') {
+  const requestId = crypto.randomUUID(); // 応答不明時もこのIDと本文を再使用
+  const response = await fetch(root + '/speech', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({request_id: requestId, action: 'speak', text: 'こんにちは。'})
+  });
+  console.log(response.status, await response.json());
+}</pre>
+<p>JavaScript例はNode.jsまたは同じオリジンからの利用向けです。任意の外部Webページに書き込み権限を開放するAPIではありません。</p>
+<h2>状態通知・表示</h2><p>同じオリジンから <code>/api/runtime/sessions/{session_id}/socket/display</code> にWebSocket接続すると status と pose 通知を受信できます。type: heartbeat を2秒ごとに送ってください。操作はREST APIから行います。切断・再接続で発話を自動再開しません。</p>
+<p>status の caption は再生中のセリフ全文です。それ以外は空文字。字幕の描画・背景・フォントや文字単位のタイミング情報は含みません。ゲームなど利用側で表示してください。speaking はプレイヤーでの再生状態であり、OSのミュート状態は判定しません。</p>
+<p><code>/web/player.html?session={session_id}&amp;display=1</code> は透過の表示専用ページです。音声は出力ウィンドウから一度だけ再生します。OBSなどでは表示URLとアプリの音声を取り込んでください。出力ウィンドウが切断すると口を閉じて待機します。</p>
+<h2>マイク・カメラで使う</h2>
+<p>起動前の画面で「マイクで動かす」または「カメラで動かす」を選びます。入力機器や反応する音の大きさ、目の左右などは開いたウィンドウで設定し、開始ボタンを押してブラウザの使用許可を確認してください。許可できない場合は、その出力ウィンドウのURLをChrome／Edgeで開き直してください。権限をアプリが自動変更することはありません。</p>
+<p>マイク入力と顔解析は出力ウィンドウの中で行います。起動元の画面は閉じて構いません。出力を閉じると入力も停止します。映像やマイク音を外部へ送信せず、マイク音は再生しません。音声を収録する場合は取り込み側でもマイクを指定してください。マイク・カメラで開いた場合、APIの発話受付はオフです。</p>
+<h2>設定を隠す・背景</h2>
+<p>「設定を隠す」を押すとキャラクターだけ表示します。Escキーで設定を再表示できます。表示専用URLには設定パネルが表示されません。</p>
+<p>背景は起動前の画面で、緑・青・任意のクロマキー色、または透過を選べます。普通のブラウザウィンドウはデスクトップまで透けないため、ウィンドウ取り込みではクロマキーを使ってください。表示専用URLは透過です。素材そのものに描かれた背景色は、背景設定だけでは消えません。</p></html>

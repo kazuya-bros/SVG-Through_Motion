@@ -1,0 +1,29 @@
+<!doctype html><meta charset="utf-8"><title>髪越しの睫毛・検証</title><pre id="result">検証中…</pre><div id="views"></div><iframe id="app" src="/?project=8ebb0a37f5534fa5b9e0b76d10df96ed" style="width:1120px;height:800px"></iframe><script type="module">
+import {prepareCanvasRenderer} from './canvas-renderer.js?v=mouth-editor-9';
+import {sceneSvg,applyPose,animatedSvg} from './motion.js?v=mouth-editor-9';
+const out=document.querySelector('#result'),log=[],wait=ms=>new Promise(r=>setTimeout(r,ms)),check=(ok,s)=>{if(!ok)throw Error(s);log.push('PASS '+s);out.textContent=log.join('\n');};
+const art=(w,h,body)=>`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">${body}</svg>`;
+const rect=(w,h,color,y=0)=>art(w,h,`<rect y="${y}" width="${w}" height="4" fill="${color}"/>`);
+const part=(id,role,x,y,w,h,svgText,extra={})=>({id,name:id,role,x,y,width:w,height:h,svgText,visible:true,opacity:1,...extra});
+const parse=text=>new DOMParser().parseFromString(text,'image/svg+xml').documentElement;
+async function svgCanvas(project,pose){const root=parse(sceneSvg(project));applyPose(root,pose,project);const url=URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(root)],{type:'image/svg+xml'}));try{const im=new Image();im.src=url;await im.decode();const c=document.createElement('canvas');c.width=project.width;c.height=project.height;c.getContext('2d').drawImage(im,0,0);return c;}finally{URL.revokeObjectURL(url);}}
+const pixel=(c,x,y)=>[...c.getContext('2d').getImageData(x,y,1,1).data];
+try{
+ const p={width:64,height:48,settings:{eyeThroughHair:true,eyeThroughHairStrength:.5,background:'white',vowels:false,duration:2,blink:true},parts:[part('white','white-l',10,8,40,24,art(40,24,'<rect width="40" height="24" fill="white"/>')),part('lash','lash-l',10,10,40,20,rect(40,20,'black'),{closedSvgText:rect(40,20,'black',15)}),part('hair','static',20,0,20,48,art(20,48,'<rect width="20" height="48" fill="#808080"/>'),{deformGroup:'front'})]};
+ const r=await prepareCanvasRenderer(p,64);r.draw({blinkL:0});check(Math.abs(pixel(r.canvas,25,12)[0]-64)<=1,'髪との重なりだけ50%の睫毛を合成');check(pixel(r.canvas,12,12)[0]===0&&pixel(r.canvas,25,5)[0]===128,'髪の外の睫毛と睫毛のない髪を変えない');
+ for(const blink of [0,.36,1]){const pose={blinkL:blink};r.draw(pose);const svg=await svgCanvas(p,pose);let error=0;const a=r.canvas.getContext('2d').getImageData(0,0,64,48).data,b=svg.getContext('2d').getImageData(0,0,64,48).data;for(let i=0;i<a.length;i++)error+=Math.abs(a[i]-b[i]);check(error/a.length<1,'CanvasとSVGの一致：閉じ率'+blink);}
+ r.draw({blinkL:1});check(pixel(r.canvas,25,12)[0]===128&&pixel(r.canvas,25,26)[0]<100,'閉じ目では開き目の位置に残像を残さない');
+ p.settings={...p.settings,eyeThroughHairStrength:.2};r.draw({blinkL:0});check(Math.abs(pixel(r.canvas,25,12)[0]-102)<=1,'強さの変更を再ラスタライズせず反映');
+ const lash=p.parts[1];lash.closedSvgText=rect(40,20,'black',18);await r.updateClosed(lash);r.draw({blinkL:1});check(pixel(r.canvas,25,26)[0]===128&&pixel(r.canvas,25,29)[0]<120,'閉じ目の編集を重ね描画にも反映');r.dispose();
+ p.settings.eyeThroughHairStrength=.5;p.parts[2].opacity=.5;const semi=await prepareCanvasRenderer(p,64);semi.draw({blinkL:0});const semiSvg=await svgCanvas(p,{blinkL:0});check(Math.abs(pixel(semi.canvas,25,12)[0]-pixel(semiSvg,25,12)[0])<2,'半透明の髪のalphaを保持');semi.dispose();
+ p.rig={segmented:true,neckX:32,neckY:40,faceX:32,faceY:22,faceWidth:40,headTop:0};p.settings={...p.settings,rigEnabled:true,rigMode:'stable',frontHair:4,hairTip:1,hairMethod:'wave',duration:2};
+ const moving=await prepareCanvasRenderer(p,64);const moved={blinkL:.36,headRoll:3,pitch:.3,yaw:.4,hairPhase:1,headTilt:2};moving.draw(moved);const movedSvg=await svgCanvas(p,moved);let moveError=0;const ma=moving.canvas.getContext('2d').getImageData(0,0,64,48).data,mb=movedSvg.getContext('2d').getImageData(0,0,64,48).data;for(let i=0;i<ma.length;i++)moveError+=Math.abs(ma[i]-mb[i]);check(moveError/ma.length<3,'頭と前髪の変形中もCanvasとSVGの位置が一致');moving.dispose();
+ const animation=animatedSvg(p,p.settings,parse);check(animation.includes('mask="url(#see-hair-mask)"')&&animation.includes('attributeName="opacity"'),'ループSVGにマスクと瞬きアニメーションを含む');
+ const f=document.querySelector('#app');for(let i=0;i<300&&!f.contentDocument?.querySelector('canvas.rig-preview');i++)await wait(100);const w=f.contentWindow,d=f.contentDocument,$=id=>d.getElementById(id);
+ check(!$('eyeThroughHair').checked&&$('eyeThroughHairStrength').disabled,'旧保存はOFFで開き、強さは35%を用意');$('eyeThroughHair').click();await wait(100);$('eyeThroughHairStrength').value='.42';$('eyeThroughHairStrength').dispatchEvent(new w.Event('input',{bubbles:true}));check($('eyeThroughHairStrengthOut').value==='42%','UIからONと強さを変更');
+ const original=w.fetch.bind(w);let saved;w.fetch=async(url,options={})=>{if(String(url).startsWith('/api/exports/')&&options.method==='POST'){saved=JSON.parse(await options.body.text());return new w.Response(JSON.stringify({url:'/test-only',path:'test-only'}),{headers:{'content-type':'application/json'}});}return original(url,options);};try{await $('saveProject').onclick();}finally{w.fetch=original;}
+ check(saved.settings.eyeThroughHair===true&&saved.settings.eyeThroughHairStrength===.42,'プロジェクト保存とOBSへ渡す設定を保持');
+ const mod=await w.eval("import('/web/app.js?v=workspace-2')");mod.adoptProject(saved);check($('eyeThroughHair').checked&&$('eyeThroughHairStrength').value==='0.42','再読込でONと強さを復元');
+ document.body.dataset.result='pass';
+}catch(e){out.textContent+='\nFAIL '+e.stack;document.body.dataset.result='fail';}
+</script>

@@ -1,0 +1,10 @@
+{
+  "version":1,"id":"assist-fixture","name":"補正API検証用の顔","width":320,"height":360,
+  "settings":{"duration":4,"sway":0,"breathe":0,"blink":false,"talking":false,"rigEnabled":false,"background":"white","closedWidth":0.8},
+  "parts":[
+    {"id":"p000","name":"顔","role":"static","x":0,"y":0,"width":320,"height":360,"svgText":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"320\" height=\"360\"><ellipse cx=\"160\" cy=\"175\" rx=\"120\" ry=\"150\" fill=\"#ffe4cf\"/></svg>"},
+    {"id":"p001","name":"画面左の目","role":"lash-r","x":80,"y":130,"width":50,"height":24,"svgText":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"50\" height=\"24\"><ellipse cx=\"25\" cy=\"12\" rx=\"18\" ry=\"11\" fill=\"#34314a\"/></svg>","closedSvgText":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"50\" height=\"24\"><path d=\"M 2 12 Q 25 25 48 12\" fill=\"none\" stroke=\"#34314a\" stroke-width=\"3\"/></svg>"},
+    {"id":"p002","name":"画面右の目","role":"lash-l","x":190,"y":130,"width":50,"height":24,"svgText":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"50\" height=\"24\"><ellipse cx=\"25\" cy=\"12\" rx=\"18\" ry=\"11\" fill=\"#34314a\"/></svg>","closedSvgText":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"50\" height=\"24\"><path d=\"M 2 12 Q 25 25 48 12\" fill=\"none\" stroke=\"#34314a\" stroke-width=\"3\"/></svg>"},
+    {"id":"p003","name":"口","role":"mouth","mouthMode":"source-open","x":130,"y":210,"width":60,"height":35,"svgText":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"60\" height=\"35\"><ellipse cx=\"30\" cy=\"17\" rx=\"26\" ry=\"15\" fill=\"#743642\"/></svg>","closedSvgText":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"60\" height=\"35\"><path d=\"M 3 17 L 30 20 L 57 17\" fill=\"none\" stroke=\"#743642\" stroke-width=\"3\"/></svg>"}
+  ]
+}

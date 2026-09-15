@@ -1,0 +1,18 @@
+<!doctype html><html lang="ja"><meta charset="utf-8"><title>Teth2 開閉比較</title>
+<style>body{margin:0;padding:20px;background:#edf1f5;color:#203047;font:15px system-ui}h1{font-size:20px}section{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:12px 0 22px}figure{margin:0;background:#fff;border:1px solid #d5deeb;border-radius:10px;overflow:hidden}figcaption{padding:10px}canvas{width:100%;display:block}h2{font-size:16px}</style>
+<h1>Teth2 目・口の開閉比較</h1><div id="status">読み込み中</div><main id="review"></main>
+<script type="module">
+import {prepareCanvasRenderer} from './canvas-renderer.js?v=mouth-editor-9';
+const project=await(await fetch('./samples/teth/project.json')).json();
+const previous=await(await fetch('./sample-feature-before.json')).json();
+for(const before of [true,false]){
+ const p=structuredClone(project);p.settings={...p.settings,rigEnabled:false,background:'white'};
+ if(before){for(const part of p.parts)if(previous[part.id])part.closedSvgText=previous[part.id];if(previous.mouthTuning)p.settings.mouthTuning=previous.mouthTuning;else delete p.settings.mouthTuning;}
+ const renderer=await prepareCanvasRenderer(p,1024),section=document.createElement('section'),heading=document.createElement('h2');heading.textContent=before?'調整前':'調整後';document.querySelector('#review').append(heading,section);
+ for(const [blink,mouth,label] of [[0,1,'開く'],[.7,.2,'目30%・口20%'],[.85,.06,'目15%・口6%'],[1,0,'閉じる']]){
+  renderer.draw({blinkL:blink,blinkR:blink,mouth});
+  const figure=document.createElement('figure'),caption=document.createElement('figcaption'),canvas=document.createElement('canvas');caption.textContent=label;
+  canvas.width=510;canvas.height=315;canvas.getContext('2d').drawImage(renderer.canvas,350,260,340,210,0,0,510,315);figure.append(caption,canvas);section.append(figure);
+ }renderer.dispose();
+}document.querySelector('#status').textContent='アプリの描画処理による比較（モーション停止）';
+</script></html>

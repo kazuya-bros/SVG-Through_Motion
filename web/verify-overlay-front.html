@@ -1,0 +1,27 @@
+<!doctype html><meta charset="utf-8"><title>髪に重なるまつ毛と前髪の揺れ</title><style>body{font:14px sans-serif}canvas{max-width:100%}pre{white-space:pre-wrap}</style><pre id="result">実行中</pre><div id="pictures"></div><script type="module">
+import {prepareCanvasRenderer} from './canvas-renderer.js?v=lash-overlay-4';
+import {sanitizeSvg} from './assets.js';
+import {svgSignature} from './raster-source.js';
+import {loopPose} from './motion.js?v=lash-overlay-4';
+import {sharedOffset,mesh,triangleMatrix,frontHairEnd} from './rig.js?v=lash-overlay-4';
+const log=t=>document.querySelector('#result').textContent+='\n'+t;
+async function save(blob,name){const r=await fetch('/api/exports/'+name,{method:'POST',body:blob});if(!r.ok)throw Error(await r.text());const v=await r.json();log(v.path);return v;}
+try{
+ const id=new URLSearchParams(location.search).get('project'),p=await(await fetch('/api/exports/'+id+'/khaula-motion.project.json')).json();
+ for(const [i,part] of p.parts.entries()){part.svgText=sanitizeSvg(part.svgText,'s'+i+'-');for(const k of ['closedSvgText','openSvgText'])if(part[k])part[k]=sanitizeSvg(part[k],'d'+i+k+'-');if(p.overlayParts.includes(part.id))part.rasterSignature=await svgSignature(part.svgText);}
+ delete p.overlayParts;
+ const prior=structuredClone(p);p.settings.frontHair=8;const fp=p.parts.find(v=>v.deformGroup==='front');if(fp.hairControl)fp.hairControl.tipY=frontHairEnd(p);
+ const r=await prepareCanvasRenderer(p,1024),sheet=document.createElement('canvas');sheet.width=1000;sheet.height=500;const c=sheet.getContext('2d');c.fillStyle='white';c.fillRect(0,0,1000,500);c.fillStyle='#31533b';c.font='22px sans-serif';
+ for(const [i,blink] of [0,1].entries()){r.draw({...loopPose(0,p.settings),blinkL:blink,blinkR:blink,mouth:0});c.drawImage(r.canvas,350,190,330,300,i*500,48,500,452);c.fillText(i?'閉眼：髪の上のまつ毛も消える':'開眼：髪の上のまつ毛を保持',i*500+10,32);}
+ document.querySelector('#pictures').append(sheet);await save(await new Promise(r=>sheet.toBlob(r)),'lash-overlap-open-closed.png');
+ const front=p.parts.find(v=>v.deformGroup==='front'),legacy=prior;legacy.settings.frontHair=Math.min(6,prior.settings.frontHair*(front.motionStrength??1))/(front.motionStrength??1);
+ legacy.parts.find(v=>v.deformGroup==='front').hairControl={rootY:p.rig.headTop+p.height*.04,tipY:p.rig.neckY,centerX:p.width/2,radius:legacy.parts.find(v=>v.deformGroup==='front').hairControl?.radius||1e9};
+ for(const point of [[480,300],[530,300],[570,280]]){
+  const peaks=[];for(const q of [legacy,p]){const only={...q,settings:{...q.settings,backHair:0,armSwing:0}};let peak=0;for(let i=0;i<120;i++)peak=Math.max(peak,Math.abs(sharedOffset(...point,only,{hairPhase:i/120*Math.PI*2})[0]));peaks.push(peak);}
+  log('前髪 '+point.join(',')+'：旧 '+peaks[0].toFixed(2)+' → 新 '+peaks[1].toFixed(2)+' px');
+ }
+ let determinant=Infinity;for(let i=0;i<24;i++)for(const tri of mesh(p)){const m=triangleMatrix(tri,p,loopPose(i/6,p.settings));determinant=Math.min(determinant,m[0]*m[3]-m[1]*m[2]);}
+ if(determinant<=0)throw Error('メッシュ反転');log('PASS 最小行列式 '+determinant.toFixed(3));
+ const saved=await save(new Blob([JSON.stringify(p)],{type:'application/json'}),'khaula-motion.project.json');log('PROJECT '+saved.url);log('ALL PASS');
+}catch(e){log('FAIL '+e.stack);}
+</script>

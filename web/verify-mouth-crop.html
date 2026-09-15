@@ -1,0 +1,34 @@
+<!doctype html><meta charset="utf-8"><title>口の位置と開度</title><pre id="result">確認中</pre><div id="images"></div>
+<script type="module">
+import {sanitizeSvg} from './assets.js';
+import {prepareCanvasRenderer} from './canvas-renderer.js?v=mouth-crop-8';
+import {svgSignature} from './raster-source.js';
+import {sceneSvg,applyPose} from './motion.js?v=mouth-crop-8';
+const log=t=>document.querySelector('#result').textContent+='\n'+t;
+try{
+ const id=new URLSearchParams(location.search).get('project'),p=await(await fetch('/api/projects/'+id)).json();
+ p.settings.renderSource='original';p.settings.vowels=false;
+ for(const [i,part] of p.parts.entries()){
+  part.svgText=sanitizeSvg(part.svgText,'qa'+i+'-');
+  if(part.role==='static'){part.rasterSourceUrl=part.originalUrl;part.rasterSignature=await svgSignature(part.svgText);}
+ }
+ const r=await prepareCanvasRenderer(p,1024),sheet=document.createElement('canvas');sheet.width=960;sheet.height=360;
+ const ctx=sheet.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,960,360);ctx.font='20px sans-serif';ctx.fillStyle='#31533b';
+ for(const [i,mouth] of [0,.5,1].entries()){
+  r.draw({mouth,blinkL:0,blinkR:0});ctx.drawImage(r.canvas,375,275,290,290,i*320,35,320,320);ctx.fillText((mouth*100)+'%',i*320+12,25);
+ }
+ document.querySelector('#images').append(sheet);
+ const blob=await new Promise(r=>sheet.toBlob(r)),response=await fetch('/api/exports/mouth-opening.png',{method:'POST',body:blob});log(JSON.stringify(await response.json()));
+ log('PASS 口の範囲 '+JSON.stringify(p.parts.filter(x=>x.role==='mouth').map(({x,y,width,height})=>({x,y,width,height}))));
+ const only={...p,parts:p.parts.filter(x=>x.role==='mouth'),settings:{...p.settings,rigEnabled:false,background:'transparent',closedWidth:.8}};
+ const mr=await prepareCanvasRenderer(only,1024);
+ function bounds(c){const a=c.getContext('2d').getImageData(0,0,1024,1024).data;let x0=1024,y0=1024,x1=-1,y1=-1;for(let y=0;y<1024;y++)for(let x=0;x<1024;x++)if(a[(y*1024+x)*4+3]>32){x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x);y1=Math.max(y1,y);}return [x0,y0,x1,y1];}
+ for(const mouth of [0,.09,.5,1]){
+  mr.draw({mouth});const root=new DOMParser().parseFromString(sceneSvg(only,only.settings,false),'image/svg+xml').documentElement;applyPose(root,{mouth},only);
+  const img=new Image(),url=URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(root)],{type:'image/svg+xml'}));img.src=url;await img.decode();
+  const c=document.createElement('canvas');c.width=c.height=1024;c.getContext('2d').drawImage(img,0,0);URL.revokeObjectURL(url);
+  const a=bounds(mr.canvas),b=bounds(c);if(a.some((v,i)=>Math.abs(v-b[i])>2)||a[2]<a[0]||Math.abs((a[1]+a[3])/2-419.5)>10)throw Error('口の描画位置が不一致 '+mouth+' '+a+' '+b);
+  log('PASS Canvas/SVG 開度 '+mouth+' 境界 '+a.join(','));
+ }
+}catch(e){log('FAIL '+e.stack);}
+</script>

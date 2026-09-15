@@ -1,0 +1,22 @@
+#mouthWorkbench{position:absolute;inset:0;z-index:10;display:flex;flex-direction:column;background:#f6f8fc;color:#283647;text-align:left}
+#mouthWorkbench header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:16px 18px;border-bottom:1px solid #dfe5ec;background:#fff}
+#mouthWorkbench strong{font-size:16px}.mouth-mode-caption{display:block;font-size:11px;color:#6c7a8b;margin-top:3px}
+.mouth-tool-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 16px;flex-wrap:wrap}
+.mouth-shape-chips,.mouth-history,.mouth-targets{display:flex;gap:5px}
+.mouth-shape-chips button{min-width:38px;font-size:15px;padding:7px 9px}
+#mouthWorkbench button.active{background:#5268d8;color:white;border-color:#5268d8}
+.mouth-zoom-label{display:flex;align-items:center;gap:6px;font-size:11px}.mouth-zoom-label select{width:120px}
+.mouth-viewport{position:relative;flex:1;min-height:180px;overflow:hidden;background:repeating-conic-gradient(#e8ecf3 0% 25%,#f8faff 0% 50%) 50% / 20px 20px}
+.mouth-viewport>canvas,.mouth-viewport>svg{position:absolute;inset:0;width:100%;height:100%}
+.mouth-viewport>svg{touch-action:none;outline:none}.mouth-viewport>svg:focus-visible{outline:2px solid #5268d8;outline-offset:-3px}
+#mouthPreparing{position:absolute;bottom:15px;left:15px;right:15px;padding:12px;background:#fffdf2e8;color:#76603d;font-size:12px;pointer-events:none}
+.mouth-drag-area{fill:#5268d808;stroke:#5268d8;stroke-width:1.5;stroke-dasharray:5 3;vector-effect:non-scaling-stroke;cursor:move;pointer-events:all}
+.mouth-knobs circle{fill:#fff;stroke:#5268d8;stroke-width:2;vector-effect:non-scaling-stroke;cursor:grab;pointer-events:all}
+.mouth-knobs circle:hover,.mouth-knobs circle:focus{fill:#d9e0ff}.mouth-knobs [data-handle=height],.mouth-knobs [data-handle=thickness]{cursor:ns-resize}.mouth-knobs [data-handle=width]{cursor:ew-resize}
+.mouth-stem{stroke:#5268d8;stroke-width:1.5;vector-effect:non-scaling-stroke;pointer-events:none}
+.mouth-drag-area.teeth,.mouth-knobs.teeth circle{stroke:#b87727}
+#mouthWorkbench footer{display:flex;justify-content:space-between;gap:10px;padding:12px 16px;font-size:11px;color:#6c7a8b;border-top:1px solid #dfe5ec;flex-wrap:wrap}
+#mouthEditTiming{font-variant-numeric:tabular-nums;color:#6c7a8b;white-space:nowrap}
+#mouthEditor>.row{margin-top:15px;flex-wrap:wrap}#mouthNumbers{padding-top:10px;margin-top:14px}#mouthNumbers input[type=color]{height:36px}
+@media(max-width:1100px){.stage-toolbar{height:auto;min-height:62px;flex-wrap:wrap;padding-block:8px}.mouth-tool-row{padding:6px 10px}.mouth-shape-chips button{min-width:31px;font-size:13px;padding:7px}.mouth-history button{font-size:10px;padding:7px}#mouthWorkbench header{padding:10px}#mouthWorkbench footer{font-size:10px}}
+
