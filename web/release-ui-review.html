@@ -1,4 +1,0 @@
-<!doctype html><html lang="ja"><meta charset="utf-8"><title>Release UI review</title><style>body{font:14px system-ui}iframe{width:390px;height:820px;display:block;border:1px solid #ccc}pre{white-space:pre-wrap}</style><button id="narrow">390px</button><button id="normal">1280px</button><pre id="result">loading</pre><iframe id="app" src="/?project=2c4f269e67f64ece858cf66d328ae666"></iframe><script>
-const frame=document.querySelector('#app');document.querySelector('#narrow').onclick=()=>frame.style.width='390px';document.querySelector('#normal').onclick=()=>frame.style.width='1280px';
-setInterval(()=>{const d=frame.contentDocument;if(!d?.body)return;document.querySelector('#result').textContent=JSON.stringify({viewport:d.documentElement.clientWidth,bodyWidth:d.documentElement.scrollWidth,title:d.title,loaded:!!d.querySelector('canvas.rig-preview'),headerHeight:d.querySelector('.topbar')?.getBoundingClientRect().height},null,2)},1000);
-</script></html>

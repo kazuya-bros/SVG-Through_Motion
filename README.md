@@ -31,19 +31,8 @@
 
 動きの考え方と検討にあたり、**Anime2.5DRig** と **PuruPuruPNGTuber** を参考にしました。両プロジェクトの作者・利用者に感謝します。本ソフトウェアはそれらのコードや素材を同梱していません。
 
-### 開発者向け
+### 配布物
 
-ローカル起動は `Start-Studio.cmd` を使用してください。Python 3.10以上と `requirements.txt` の依存関係が必要です。
+Windows向けのビルド済みZIPをGitHub Releasesから配布します。展開後、同梱の `SVG-Through-Motion-*.exe` を起動してください。
 
-```powershell
-.\Start-Studio.ps1
-```
-
-テスト：
-
-```powershell
-npm test
-python -m unittest discover -s tests -p 'test_*.py'
-```
-
-詳細な仕様・検証記録は [`docs/`](docs/) を参照してください。
+ソースコードはビルドと保守のために公開しています。入力素材や環境によって変換結果や動作速度に差が出るため、まずはプレビュー版としてお試しください。
