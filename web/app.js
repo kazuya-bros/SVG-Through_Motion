@@ -1,16 +1,30 @@
+import {partThumbnail} from './motion-part-picker.js';
+import {smileGeneratedMouth} from './closed-mouth.js';
+import {installSvgLayerEditor} from './svg-layer-editor.js';
+import {applyLayerEdit,layerRevision} from './svg-layer-edit.js';
+import {installAccessoryTargets} from './accessory-targets-ui.js';
+import {headSettings,executeHeadMotion,validateHeadTuning} from './head-coordination.js';
+import {chooseProjectSave} from './project-save.js';
+import {installHeadCoordination} from './head-coordination-ui.js';
+import {installMotionRegionUI} from './motion-region-ui.js';
+import {partLabel} from './part-label.js';
+import {executeMotionLinks,retireClothingLinks,validateMotionLinks,installMotionLinksUI} from './motion-links.js';
+import {installRifeMorph} from './rife-morph-ui.js';
+import {validateMorph,invalidateMorph} from './rife-morph.js';
 import {installExpressionControls,normalizeExpressions} from './expression-presets.js';
 import {installRenderSourceUI} from './render-source-ui.js';
 import {installMotionLayout} from './motion-layout.js';
 import {secondaryKind,normalizeSecondary} from './secondary-motion.js';
 import {installSecondaryMotion} from './secondary-motion-ui.js';
 import {exportProgress} from './export-progress.js';
-import {streamLoopMp4} from './loop-export.js';
+import {streamLoopVideo} from './loop-export.js';
 import {naturalMotionSettings,sampleMotionSettings} from './natural-motion.js';
 import {normalizeArtworkSources,installArtworkSources} from './artwork-sources.js';
-import {earEnabled,chooseEarLayer,earLayerSelection} from './idle-expression.js';
+import {earEnabled} from './idle-expression.js';
 import {activateMotionControl} from './hair-activation.js';
 import {installPivotPicker} from './pivot-picker.js';
-import {chestRegion} from './chest-motion.js';
+import {chestRegion,chestSettings,chestDefaults} from './chest-motion.js';
+import {installChestRegionUI} from './chest-region-ui.js';
 import {SpeechEnvelope} from './speech-envelope.js';
 import {installLayerSort,reorderLayers} from './layer-sort.js';
 import {foregroundHairIds} from './eye-through-hair.js';
@@ -29,6 +43,7 @@ import {installAssistEntry} from './assist-entry.js';
 import {installStartSample} from './start-sample.js';
 import {installMainMenu,rememberCharacter,returnToMenu} from './main-menu.js';
 import {installSaveGuard} from './save-guard.js';
+import {broadcastView} from './broadcast-mode.js';
 import {installShapeAssist} from './shape-assist.js';
 import {pngBlob,exportPlan} from './material-export.js';
 import {installMouthEditor} from './mouth-editor.js';
@@ -37,6 +52,7 @@ import {normalizeLid} from './eyelid-controls.js';
 import {normalizeStrands} from './hair-strands.js';
 import {svgSignature} from './raster-source.js';
 import {sanitizeSvg} from './assets.js';
+import {aiCorrectionUiVisible} from './ui-flags.js';
 import {prepareCanvasRenderer} from './canvas-renderer.js?v=mouth-editor-9';
 import {normalizeRig,rigActive,frontHairEnd} from './rig.js?v=mouth-editor-9';
 import {restrainedDefaults} from './pachipaku-motion.js?v=mouth-editor-9';
@@ -45,6 +61,8 @@ import {kanaTrack,timedVowel,vowels} from './vowels.js';
 import {clamp, esc, loopPose, mouthEnvelope, sceneSvg, applyPose} from './motion.js?v=mouth-editor-9';
 
 const $ = id => document.getElementById(id);
+document.body.classList.toggle('exhibition-mode', !aiCorrectionUiVisible);
+if($('agentControlGuide'))$('agentControlGuide').hidden=!aiCorrectionUiVisible;
 installMotionLayout();
 const importFlow=installImportFlow();
 const assistEntry=installAssistEntry();
@@ -53,22 +71,26 @@ let lastTick = performance.now(), testBlinkUntil = 0, importing = false, recordi
 let audioContext, analyser, mediaDestination, audioSource, audioUrl, lastWav, voiceMouth = 0, browserMouth = 0, speechActive = false;
 let synthController = null, voiceGeneration = 0;
 let previewRenderer=null, previewGeneration=0,rasterReady=Promise.resolve(),previewReady=Promise.resolve();
-let pivotPicker,pivotWasPlaying=false,secondaryUI;
+let headUI,regionUI,regionWasPlaying=false,pivotPicker,pivotWasPlaying=false,secondaryUI,motionLinksUI,chestUI,chestWasPlaying=false;
 let editor,heldEye="",wasPlayingBeforeHold=false;
-let mouthEditor,mouthPreview=null,artworkSources;
+let mouthEditor,mouthPreview=null,artworkSources,rifeUI;
 let manualVowel=null,voiceTokens=[],speechStarted=0;
 let outputs=null,materialsWasPlaying=false,materialsRendering=false;
 let workspaceUI=null,expressionUI=null,renderSourceUI=null;
 let saveGuard=null,livePreview=false,savingProject=false;
 let staticFrameKey='',resumeAfterEdit=false;
 const inShapeEditor=()=>workspaceUI?.active==='edit';
-const workArea=installWorkArea({enabled:()=>!!project&&['edit','motion','export'].includes(workspaceUI?.active)});
+const workArea=installWorkArea({enabled:()=>!!project&&['edit','motion','export','live'].includes(workspaceUI?.active)});
 const ttsUI=installTtsUI({stop:stopVoice,status:voiceStatus,post:(...args)=>postJson(...args)});
 const voiceEnvelope=new SpeechEnvelope(),browserEnvelope=new SpeechEnvelope();
 const defaultSpeech=$('speechText').value,defaultReading='こんにちは。きょうは、どんなうごきをつくりましょうか。';
 const roles = new Set(['tail','static','glasses','hair','chest','ear-r','ear-l','mouth','white-r','iris-r','lash-r','brow-r','white-l','iris-l','lash-l','brow-l']);
 const rolesJa = {'tail':'尻尾','static':'固定','glasses':'眼鏡','hair':'髪','chest':'胸','ear-r':'右耳','ear-l':'左耳','mouth':'口','white-r':'右の白目','iris-r':'右の瞳','lash-r':'右のまつ毛','brow-r':'右の眉','white-l':'左の白目','iris-l':'左の瞳','lash-l':'左のまつ毛','brow-l':'左の眉'};
 const parseSvg = text => new DOMParser().parseFromString(text, 'image/svg+xml').documentElement;
+const materialCutLink=document.createElement('button');
+materialCutLink.className='material-cut-entry';materialCutLink.id='editSvgLayers';materialCutLink.textContent='レイヤーの補正・結合';materialCutLink.type='button';
+materialCutLink.onclick=()=>layerEditor.open();
+$('layers').before(materialCutLink);
 
 
 function status(text, error=false) {
@@ -91,7 +113,7 @@ const safe = fn => async e => {try {await fn(e);} catch(err) {if(err.name !== 'A
 const exportTask=(label,fn)=>safe(()=>exportProgress.run(label,fn,()=>{const link=$('lastExport');return link.hidden?null:{url:link.href,name:link.textContent,path:link.title};}));
 function needProject() {if (!project) throw Error('先にPSDまたは画像を読み込んでください');if(project.rig?.seamPending)throw Error('パーツの境界を準備しています。少し待ってください');}
 function settings() {
-  return {depthEnabled:!!project?.rig?.depth&&$('depthEnabled').checked,depthStrength:clamp($('depthStrength').value),tailSwing:+$('tailSwing').value,tailCycles:+$('tailCycles').value,irisGaze:$('irisGaze').value,earPattern:$('earPattern').value,earCycles:+$('earCycles').value,independentHair:true,frontHairMethod:$('frontHairMethod').value,backHairMethod:$('backHairMethod').value,frontHairCycles:+$('frontHairCycles').value,backHairCycles:+$('backHairCycles').value,irisX:+$('irisX').value,irisScale:+$('irisScale').value,irisCycles:+$('irisCycles').value,eyeThroughHair:$('eyeThroughHair').checked,eyeThroughHairStrength:clamp($('eyeThroughHairStrength').value),mouthTuning:project?.settings?.mouthTuning,headPitch:+$('headPitch').value,pitchSway:+$('pitchSway').value,renderSource:$('renderSource').value,mouthStyle:project?.settings?.mouthStyle==='anime'?'anime':'artwork',mouthOffsetY:clamp(project?.settings?.mouthOffsetY??0,-20,20),rigMode:$('rigMode').value,hairMethod:$('hairMethod').value,springCycles:+$('springCycles').value,springSoftness:.5,lipSyncMode:'open-close',vowels:false,frontHair:+$('frontHair').value,backHair:+$('backHair').value,hairTip:2,armSwing:+$('armSwing').value,rigEnabled:$('rigEnabled').checked,headTilt:+$('headTilt').value,headYaw:+$('headYaw').value,headNod:+$('headNod').value,bodyFollow:+$('bodyFollow').value,hairBend:+$('hairBend').value,
+  return {headMotionVersion:2,headIdle:$('headIdle').checked,headYawOffset:+$('headYawOffset').value,headRollOffset:+$('headRollOffset').value,faceCoordination:project?.settings?.faceCoordination===true,faceNeckBlend:clamp(project?.settings?.faceNeckBlend??.35,.15,.6),rifeEyesMode:project?.settings?.rifeEyesMode==='grid'?'grid':'svg-frames',rifeMouthMode:['grid','stable'].includes(project?.settings?.rifeMouthMode)?project.settings.rifeMouthMode:'svg-frames',rifeEyes:project?.settings?.rifeEyes===true,rifeMouth:project?.settings?.rifeMouth===true,rifeStrength:clamp(project?.settings?.rifeStrength??1),...chestSettings(project?.settings),depthEnabled:!!project?.rig?.depth&&$('depthEnabled').checked,depthStrength:clamp($('depthStrength').value),tailSwing:+$('tailSwing').value,tailCycles:+$('tailCycles').value,irisGaze:$('irisGaze').value,earPattern:$('earPattern').value,earCycles:+$('earCycles').value,independentHair:true,frontHairMethod:$('frontHairMethod').value,backHairMethod:$('backHairMethod').value,frontHairCycles:+$('frontHairCycles').value,backHairCycles:+$('backHairCycles').value,irisX:+$('irisX').value,irisScale:+$('irisScale').value,irisCycles:+$('irisCycles').value,eyeThroughHair:$('eyeThroughHair').checked,eyeThroughHairStrength:clamp($('eyeThroughHairStrength').value),mouthTuning:project?.settings?.mouthTuning,headPitch:+$('headPitch').value,pitchSway:+$('pitchSway').value,renderSource:$('renderSource').value,mouthStyle:project?.settings?.mouthStyle==='anime'?'anime':'artwork',mouthOffsetY:clamp(project?.settings?.mouthOffsetY??0,-20,20),rigMode:$('rigMode').value,hairMethod:$('hairMethod').value,springCycles:+$('springCycles').value,springSoftness:.5,lipSyncMode:'open-close',vowels:false,frontHair:+$('frontHair').value,backHair:+$('backHair').value,hairTip:2,armSwing:+$('armSwing').value,rigEnabled:$('rigEnabled').checked,headTilt:+$('headTilt').value,headYaw:+$('headYaw').value,headNod:+$('headNod').value,bodyFollow:+$('bodyFollow').value,hairBend:+$('hairBend').value,
     bounceDuration:project?.settings?.bounceDuration,duration:clamp($('duration').value,1,30), sway:clamp($('sway').value,0,12), breathe:clamp($('breathe').value,0,40), blink:$('blink').checked, talking:$('talking').checked,
     singleBounce:$('singleBounce').checked,bounceHeight:clamp($('bounceHeight').value,0,160),hair:clamp($('hair').value,0,25),chest:clamp($('chest').value,0,40),ears:clamp($('ears').value,0,30),closedWidth:clamp(project?.settings?.closedWidth??.8,.5,1),background:$('outputBackground').value};
 }
@@ -102,7 +124,7 @@ function updateSettings(event) {
   if(motionActivated){$('rigEnabled').checked=true;if(!project.rig)project.rig=normalizeRig({},project);}
   if(project) project.settings=s;
   $('eyeThroughHairStrengthOut').value=Math.round(s.eyeThroughHairStrength*100)+'%';$('eyeThroughHairStrength').disabled=!s.eyeThroughHair;
-  for(const id of ['tailSwing','tailCycles','irisX','irisScale','irisCycles','headPitch','pitchSway','headTilt','headYaw','headNod','bodyFollow','hairBend','frontHair','backHair','frontHairCycles','backHairCycles','armSwing','springCycles'])$(id+'Out').value=s[id];
+  for(const id of ['tailSwing','tailCycles','irisX','irisScale','irisCycles','headYawOffset','headRollOffset','headPitch','pitchSway','headTilt','headYaw','headNod','bodyFollow','hairBend','frontHair','backHair','frontHairCycles','backHairCycles','armSwing','springCycles'])$(id+'Out').value=s[id];
   for(const id of ['irisX'])$(id+'Out').value=s[id]+' px';
   $('irisScaleOut').value=s.irisScale+'%';
   $('pitchSwayOut').value=Math.round(s.pitchSway*100)+'%';
@@ -113,17 +135,20 @@ function updateSettings(event) {
   for(const id of ['bounceHeight','hair','chest','ears'])$(id+'Out').value=s[id]+(['hair','ears'].includes(id)?'°':' px');
   $('earsOut').value=s.earPattern==='natural'?s.ears:s.earPattern==='up'?s.ears*.5+' px':s.ears*.25+'°';
   $('earsAmountLabel').textContent=s.earPattern==='up'?'跳ねる高さ':'揺れの大きさ';
-  $('earPivotPick').hidden=s.earPattern==='up';
+  $('earPivotPick').hidden=false;
   $('stage').classList.toggle('white',s.background==='white');
   $('scrubber').max=s.duration; $('durationLabel').textContent='/ '+s.duration.toFixed(2).padStart(5,'0')+' s'; $('endTime').textContent=s.duration+' s';
   if(time>s.duration) time=0;
   if(motionActivated)rebuild();
 }
 function setSettings(s) {
+  s=headSettings(s);if(project)Object.assign(project.settings,{headMotionVersion:2,headIdle:s.headIdle,headYawOffset:s.headYawOffset,headRollOffset:s.headRollOffset});$('headIdle').checked=s.headIdle;
+  if(project){project.settings.faceCoordination=s.faceCoordination===true;project.settings.faceNeckBlend=clamp(s.faceNeckBlend??.35,.15,.6);}
+  if(project)Object.assign(project.settings,chestSettings(s));
   $('depthControls').hidden=!project?.rig?.depth;$('depthEnabled').checked=!!project?.rig?.depth&&s.depthEnabled!==false;$('depthStrength').value=clamp(s.depthStrength??1);
   if(project)project.settings.bounceDuration=Number.isFinite(s.bounceDuration)?clamp(s.bounceDuration,1,30):undefined;
   $('eyeThroughHair').checked=s.eyeThroughHair===true;$('eyeThroughHairStrength').value=Number.isFinite(+s.eyeThroughHairStrength)?clamp(s.eyeThroughHairStrength):.35;
-  const defaults={tailSwing:8,tailCycles:1,earCycles:1,irisX:0,irisScale:0,irisCycles:1,headPitch:0,pitchSway:0,duration:4,bounceHeight:28,hair:0,chest:0,ears:0,...restrainedDefaults};
+  const defaults={tailSwing:8,tailCycles:1,earCycles:1,irisX:0,irisScale:0,irisCycles:1,headYawOffset:0,headRollOffset:0,headPitch:0,pitchSway:0,duration:4,bounceHeight:28,hair:0,chest:0,ears:0,...restrainedDefaults};
   $('irisGaze').value=s.irisGaze==='sweep'?'sweep':'natural';
   $('earPattern').value=['twitch','double','alternate','droop','up','natural'].includes(s.earPattern)?s.earPattern:'twitch';
   $('rigMode').value='stable';
@@ -137,13 +162,14 @@ function setSettings(s) {
   $('renderSource').value=s.renderSource==='svg'?'svg':'original';
   $('rigEnabled').checked=!!s.rigEnabled;
   $('singleBounce').checked=!!s.singleBounce;$('outputBackground').value=s.background==='transparent'?'transparent':'white';
-  $('blink').checked=s.blink ?? true; $('talking').checked=!!s.talking; updateSettings();
+  $('blink').checked=s.blink ?? true; $('talking').checked=s.talking??true; updateSettings();
 }
 
 function validateProject(p) {
   if(!p || p.version!==1 || !Array.isArray(p.parts) || p.parts.length>100 || !p.parts.length) throw Error('対応するプロジェクトJSONではありません');
   if(!Number.isFinite(p.width) || !Number.isFinite(p.height) || p.width<=0 || p.height<=0 || p.width*p.height>16777216) throw Error('キャンバスサイズが不正です');
   p.name=String(p.name || 'Untitled').slice(0,150);
+  p.rifeMorph=validateMorph(p.rifeMorph);
   p.expressionPresets=normalizeExpressions(p.expressionPresets);
   const partIds=new Map(p.parts.map((part,i)=>[part.id,`p${String(i).padStart(3,'0')}`]));
   p.parts=p.parts.map((part,i)=>{
@@ -153,19 +179,22 @@ function validateProject(p) {
       role:roles.has(part.role)?part.role:'static', visible:part.visible !== false, opacity:clamp(part.opacity ?? 1), paths:clamp(part.paths,0,1000000)};
     clean.mouthMode=['source-open','synthetic'].includes(part.mouthMode)?part.mouthMode:'source-closed';
     if(part.hairControl&&['rootY','tipY','centerX','radius'].every(k=>Number.isFinite(part.hairControl[k]))){const c=part.hairControl;clean.hairControl={rootY:clamp(c.rootY,0,p.height*.9),tipY:clamp(c.tipY,clamp(c.rootY,0,p.height*.9)+p.height*.1,p.height),centerX:clamp(c.centerX,0,p.width),radius:clamp(c.radius,p.width*.08,p.width*2)};}
+    if(part.headFollow)clean.headFollow=validateHeadTuning(part.headFollow);
     if(part.lidAdjust)clean.lidAdjust=normalizeLid(part.lidAdjust);
     for(const k of ['hairStrands','savedHairStrands'])if(part[k])clean[k]=normalizeStrands(part[k],p);
     if(part.faceBase===true)clean.faceBase=true;
     if(typeof part.materialId==='string'&&/^[a-f0-9]{32}$/.test(part.materialId))clean.materialId=part.materialId;
     if(partIds.has(part.followPart)&&part.followPart!==part.id)clean.followPart=partIds.get(part.followPart);
+    if(part.motionLink!==undefined){if(!partIds.has(part.motionLink))throw Error('連結先のレイヤーが見つかりません');clean.motionLink=partIds.get(part.motionLink);}
+    for(const key of ['motionLinkMode','motionLinkAnchor','waistMotion'])if(part[key]!==undefined)clean[key]=structuredClone(part[key]);
     if(Number.isFinite(part.attachmentDepth))clean.attachmentDepth=clamp(part.attachmentDepth,-1,1);
-    if(typeof part.earMotion==='boolean')clean.earMotion=part.earMotion;
+    for(const key of ['earMotion','tailMotion','wingMotion'])if(typeof part[key]==='boolean')clean[key]=part[key];
     clean.motionStrength=clamp(part.motionStrength??1,0,2);
     if(['l','r'].includes(part.blinkOverlay))clean.blinkOverlay=part.blinkOverlay;
     if(/^brow-[lr]$/.test(part.faceOverlay||''))clean.faceOverlay=part.faceOverlay;
-    if(['core','front','back','arm-r','arm-l','tail','bottomwear','neckwear','earwear','wings'].includes(part.deformGroup))clean.deformGroup=part.deformGroup;
+    if(['core','front','back','arm-r','arm-l','tail','bottomwear','legwear','footwear','neckwear','earwear','wings'].includes(part.deformGroup))clean.deformGroup=part.deformGroup;
     if(part.independentAccessory){clean.independentAccessory=true;clean.sourceLayerName=String(part.sourceLayerName||'').slice(0,150);}
-    if(part.secondaryMotion)clean.secondaryMotion=normalizeSecondary(part.secondaryMotion);
+    if(part.secondaryMotion)clean.secondaryMotion=normalizeSecondary({enabled:/^brow-[lr]$/.test(part.role),...part.secondaryMotion});
     for(const key of ['pivotX','pivotY'])if(Number.isFinite(part[key]))clean[key]=clamp(part[key],-20000,20000);
     clean.svgText=sanitizeSvg(part.svgText,`s${i}-`);
     Object.assign(clean,normalizeArtworkSources({...part,id:clean.id},sanitizeSvg));
@@ -181,20 +210,22 @@ function validateProject(p) {
     clean.rasterDisabled=!!part.rasterDisabled;
     if(['svg','original'].includes(part.renderSource))clean.renderSource=part.renderSource;
     if(typeof part.rasterSourceUrl==='string'&&(/^\/assets\/[a-f0-9]{32}\/originals\/p\d+\.png$/.test(part.rasterSourceUrl)||/^data:image\/png;base64,[a-zA-Z0-9+/=]+$/.test(part.rasterSourceUrl))&&/^[a-f0-9]{64}$/.test(part.rasterSignature||'')){clean.rasterSourceUrl=part.rasterSourceUrl;clean.rasterSignature=part.rasterSignature;}
+    smileGeneratedMouth(clean,p.settings||{});
     return clean;
   });
+  retireClothingLinks(p);validateMotionLinks(p);
   if(!/^\/assets\/[a-f0-9]{32}\/source\.png$/.test(p.sourceUrl||'') && !/^data:image\/png;base64,[a-zA-Z0-9+/=]+$/.test(p.sourceUrl||'')) p.sourceUrl='';
-  p.settings={...p.settings,lipSyncMode:'open-close',vowels:false};
+  p.settings={...headSettings(p.settings),lipSyncMode:'open-close',vowels:false};
   if(p.settings.mouthTuning)p.settings.mouthTuning=normalizeMouthTuning(p.settings.mouthTuning);
   if(p.rig)p.rig=normalizeRig(p.rig,p);
   return p;
 }
-export function adoptProject(p,{saved=false}={}) {
+export function adoptProject(p,{saved=false,mode='edit'}={}) {
   if(recording) throw Error('録画完了後にプロジェクトを開いてください');
   mouthEditor?.close({rebuild:false});
   outputs?.reset();
   motionAssistResult?.update(null);
-  project=validateProject(p); selected=null; time=0; playing=true;expressionUI?.refresh();
+  project=validateProject(p);livePreview=mode==='live'; selected=null; time=0; playing=true;expressionUI?.refresh();
   manualVowel=null;mouthPreview=null;heldEye="";editor?.resetHold();
   if(project.rig?.segmented&&!project.rig.seamWeights)project.rig.seamPending=true;
   $('projectName').textContent=project.name; $('canvasInfo').textContent=`${project.width} × ${project.height} px`;
@@ -226,7 +257,8 @@ export function adoptProject(p,{saved=false}={}) {
   }
   editor?.refresh();
   mouthEditor?.refresh();
-  workspaceUI?.imported();
+  workspaceUI?.imported(mode);
+  if(mode==='live'){playing=true;view='motion';workArea.reset();updateView();}
   void restoreSourceEyelids(project);
   rasterReady=restoreRasterSources(project);
   if(project.rig?.seamPending){const target=project;void ensureSeamRig(target).then(()=>{if(project===target)rebuild();}).catch(e=>{if(project===target)status('境界の準備に失敗しました: '+e.message,true);});}
@@ -287,20 +319,18 @@ async function restoreSourceEyelids(target) {
   }catch{/* A portable project can be used without its original conversion directory. */}
 }
 function rebuild() {
-  secondaryUI?.refresh();
+  invalidateMorph();rifeUI?.refresh();
+  secondaryUI?.refresh();motionLinksUI?.refresh();headUI?.refresh();
+  chestUI?.refresh();regionUI?.refresh();
   if(project){
     const hasChest=project.parts.some(p=>p.visible&&p.role==='chest')||!!chestRegion(project);
     $('chest').disabled=!hasChest;
     $('chestMotionHint').textContent=hasChest?'胸元の揺れを調整します。0にすると止まります。':'胸元の位置を確認できません。胴体を含む素材を読み込んでください。';
     $('hairAccessoryControls').hidden=!project.parts.some(p=>p.visible&&p.role==='hair');
-    const earSelect=$('earTarget');earSelect.replaceChildren(new Option('耳の役割があるレイヤー','auto'),new Option('なし','none'));
-    for(const p of project.parts)earSelect.append(new Option(p.name+(p.visible?'':'（非表示）'),p.id));
-    earSelect.value=earLayerSelection(project);
+    accessoryUI?.refresh();
     const hasEars=project.parts.some(p=>p.visible&&earEnabled(p));
-    $('earPivotPick').disabled=project.parts.filter(p=>p.visible&&earEnabled(p)).length!==1;
     for(const id of ['ears','earPattern','earCycles'])$(id).disabled=!hasEars;
-    $('earMotionHint').textContent=hasEars?'頻度は1ループの回数です。大きさを0にすると止まります。':'headwearなど、ピコピコさせたいレイヤーを選んでください。';
-    $('tailMotionControls').hidden=!project.parts.some(p=>p.visible&&p.role==='tail');
+    $('earMotionHint').textContent=hasEars?'付け根の位置はレイヤーごとに調整できます。':'対象レイヤーなし。動かすレイヤーを選べます。';
     const armSelect=$('armPivotTarget'),chosen=armSelect.value;
     armSelect.replaceChildren();
     for(const group of ['arm-r','arm-l']){const parts=project.parts.filter(p=>p.visible&&p.deformGroup===group);if(parts.length){const option=document.createElement('option');option.value=group;option.textContent=parts.map(p=>p.name).join('・');armSelect.append(option);}}
@@ -337,7 +367,7 @@ function rebuild() {
       renderer.draw(currentPose());
       previewRenderer=renderer;renderer.canvas.className='rig-preview preview-reveal';renderer.canvas.ariaLabel='頭・顔・髪の変形プレビュー';
       art.replaceChildren(renderer.canvas);art.setAttribute('aria-busy','false');lastTick=performance.now();
-      editor?.drawGuide();pivotPicker?.refresh();
+      editor?.drawGuide();pivotPicker?.refresh();chestUI?.refresh();regionUI?.refresh();
     }catch(err){
       renderer?.dispose();
       if(generation===previewGeneration){art.setAttribute('aria-busy','false');loading.textContent='プレビューを準備できませんでした。';const retry=document.createElement('button');retry.textContent='もう一度試す';retry.onclick=rebuild;loading.append(retry);status('変形プレビューを準備できませんでした: '+err.message,true);}
@@ -345,6 +375,9 @@ function rebuild() {
   })();
 }
 function renderLayers() {
+  $('partCount').textContent=project.parts.length;
+  $('pathInfo').textContent=project.parts.reduce((sum,p)=>sum+(p.paths||0),0).toLocaleString()+' PATHS';
+  if(selected&&!project.parts.some(p=>p.id===selected)){selected=null;$('partFields').hidden=true;$('noPart').hidden=false;}
   artworkSources?.refresh();
   const scrollTop=$('layers').scrollTop;
   $('layers').replaceChildren();
@@ -352,9 +385,9 @@ function renderLayers() {
     const row=document.createElement('div');row.className='layer'+(p.id===selected?' selected':''); row.tabIndex=0;
     row.dataset.partId=p.id;row.title='上下にドラッグで重なり順を変更（Alt＋↑↓でも移動）';
     const grip=document.createElement('span');grip.className='layer-grip';grip.textContent='⠿';grip.ariaHidden='true';
-    const thumb=document.createElement('img');thumb.alt='';thumb.draggable=false;if(p.originalUrl)thumb.src=p.originalUrl;
-    const text=document.createElement('div');const name=document.createElement('div');name.className='layer-name';name.textContent=p.name;name.title=p.name;
-    const role=document.createElement('div');role.className='layer-role';role.textContent=p.faceOverlay?'眉に追従':p.blinkOverlay?'目元に追従・瞬きに連動':({'front':'前髪・独立した揺れ','back':'後ろ髪・毛先の揺れ','arm-r':'右腕・肩を支点に回転','arm-l':'左腕・肩を支点に回転'})[p.deformGroup]||rolesJa[p.role];text.append(name,role);
+    const thumb=partThumbnail(p);
+    const text=document.createElement('div');const name=document.createElement('div');name.className='layer-name';name.textContent=partLabel(p);name.title=partLabel(p);
+    const role=document.createElement('div');role.className='layer-role';role.textContent=p.faceOverlay?'眉に追従':p.blinkOverlay?'目元に追従・瞬きに連動':({'front':'前髪・独立した揺れ','back':'後ろ髪・毛先の揺れ','arm-r':'右腕・肩を支点に回転','arm-l':'左腕・肩を支点に回転'})[p.deformGroup]||rolesJa[p.role];role.textContent=p.motionLink?'連動：'+(partLabel(project.parts.find(v=>v.id===p.motionLink)||{name:p.motionLink})):p.followPart?'連動：'+(partLabel(project.parts.find(v=>v.id===p.followPart)||{name:p.followPart})):'連動なし';text.append(name,role);
     const visible=document.createElement('input');visible.type='checkbox';visible.checked=p.visible;visible.ariaLabel=`${p.name}の表示`;
     visible.addEventListener('click',e=>e.stopPropagation());visible.addEventListener('change',()=>{p.visible=visible.checked;rebuild();});
     text.className='layer-text';row.append(grip,thumb,text,visible);row.addEventListener('click',()=>selectPart(p.id));row.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target===row)selectPart(p.id);});
@@ -372,15 +405,15 @@ installLayerSort($('layers'),(id,beforeId)=>{
 function selectPart(id) {
   selected=id;const p=project.parts.find(p=>p.id===id);renderLayers();
   svg?.querySelectorAll('[data-part]').forEach(node=>node.classList.toggle('selected-part',node.dataset.part===id));
-  $('partEditor').open=true;$('noPart').hidden=true;$('partFields').hidden=false;$('selectedName').textContent=p.name;renderSourceUI?.refresh();
+  $('partEditor').open=true;$('noPart').hidden=true;$('partFields').hidden=false;$('selectedName').textContent=partLabel(p);renderSourceUI?.refresh();
   $('partRole').value=p.role;$('partOpacity').value=p.opacity;
   $('partPivotPick').hidden=!(p.deformGroup?.startsWith('arm-')||p.role==='hair'||p.role==='tail'||!!secondaryKind(p)||earEnabled(p));
   $('mouthMode').value=p.mouthMode||'source-closed';$('mouthModeLabel').hidden=p.role!=='mouth';
-  workspaceUI?.editPage('parts');editor?.refresh();
+  workspaceUI?.editPage('parts');editor?.refresh();motionLinksUI?.refresh();
 }
 function updateView() {
   $('stage').classList.toggle('compare',view==='compare');
-  $('artboard').hidden=view==='original';$('originalWrap').hidden=view==='motion';
+  $('animationWrap').hidden=view==='original';$('artboard').hidden=view==='original';$('originalWrap').hidden=view==='motion';
   if(view!=='motion'&&!project?.sourceUrl)status('元画像を含まないプロジェクトです。比較にはPSDを読み込んでください。');
 }
 function selectTab(name) {
@@ -426,6 +459,8 @@ async function importHybrid() {
 }
 
 function currentPose() {
+  if(chestUI?.active||regionUI?.active)return editingPose(0,0);
+
   if(inShapeEditor()&&!pivotPicker?.active)return editingPose(+$('editEyeClosure').value,+$('mouth').value);
   const pose=loopPose(time,settings());
   if(pivotPicker?.active){pose.pivotOverrides=pivotPicker.overrides;pose.neckPivot=pivotPicker.neckOverride;}
@@ -453,8 +488,8 @@ function frame(now) {
   const vowel=pose.vowel||vowels[pose.vowelWeights?.indexOf(Math.max(...(pose.vowelWeights||[])))];
   const label=$('vowels').checked&&pose.mouth>.05?('あいうえお'[vowels.indexOf(vowel)]||'あ'):'閉';
   if($('vowelNow').textContent!==label)$('vowelNow').textContent=label;
-  const frameKey=inShapeEditor()?JSON.stringify([pose,previewGeneration,project?.settings]):'';
-  if(!materialsRendering&&!mouthEditor?.active&&(!inShapeEditor()||frameKey!==staticFrameKey)){
+  const still=inShapeEditor()||!playing||savingProject,frameKey=still?JSON.stringify([pose,previewGeneration,project?.settings]):'';
+  if(!recording&&!materialsRendering&&!mouthEditor?.active&&(!still||frameKey!==staticFrameKey)){
     if(previewRenderer)previewRenderer.draw(pose);else if(svg&&project)applyPose(svg,pose,project);
     staticFrameKey=frameKey;$('stage').dataset.drawCount=String(+( $('stage').dataset.drawCount||0)+1);
   }
@@ -493,70 +528,17 @@ async function portableProject(source=null) {
 
 // Portable ZIP writer (STORE), including UTF-8 names and CRC32. No CDN dependency.
 
-async function exportLoopMp4() {
-  const wasPlaying=playing;recording=true;playing=false;$('exportVideo').disabled=true;$('exportMp4').disabled=true;
-  let renderer;
-  try {
-    const copy=structuredClone(project),s={...settings(),background:'white'};copy.settings=s;
-    status('MP4用のパーツを準備しています…');
-    renderer=await prepareCanvasRenderer(copy,1080,{allowUpscale:true,supersample:2});
-    const mp4=await streamLoopMp4(renderer,s,request,status);showExport(mp4,'svg-through-motion.mp4');
-    status(`${s.duration}秒・30fpsのMP4を data/exports に保存しました。`);
-  }finally{renderer?.dispose();recording=false;playing=wasPlaying;$('exportVideo').disabled=false;$('exportMp4').disabled=false;}
-}
 async function exportVideo(format='webm') {
-  await rasterReady;
-  needProject();if(recording)throw Error('録画中です');
-  if(format==='mp4'&&$('audio').paused&&!speechActive)return exportLoopMp4();
-  if(!window.MediaRecorder)throw Error('このブラウザはWebM録画に対応していません');
-  const mime=['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(m=>MediaRecorder.isTypeSupported(m));
-  if(!mime)throw Error('WebMに対応したChromeかEdgeで開いてください');
-  const wasPlaying=playing;recording=true;$('exportVideo').disabled=true;$('exportMp4').disabled=true;playing=false;
-  status('動画用のパーツを準備しています…');
-  let renderer;
-  try {const copy=structuredClone(project);if(format==='mp4')copy.settings.background='white';renderer=await prepareCanvasRenderer(copy,1080,{allowUpscale:true,supersample:2});}
-  catch(err){recording=false;playing=wasPlaying;$('exportVideo').disabled=false;$('exportMp4').disabled=false;throw err;}
-  const {canvas}=renderer;
-  const hasAudio=analyser&&!$('audio').paused;
-  if(!hasAudio&&!speechActive)time=0;
-  renderer.draw(currentPose());
-  const captured=canvas.captureStream(30),videoTrack=captured.getVideoTracks()[0];
-  if(hasAudio&&mediaDestination)for(const track of mediaDestination.stream.getAudioTracks())captured.addTrack(track.clone());
-  const recorder=new MediaRecorder(captured,{mimeType:mime,videoBitsPerSecond:12_000_000});const chunks=[];
-  let encoderStarted=false;recorder.onstart=()=>{encoderStarted=true;};
-  const done=new Promise((resolve,reject)=>{recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data);};recorder.onstop=resolve;recorder.onerror=e=>reject(e.error||Error('録画に失敗しました'));});
+  await rasterReady;needProject();if(recording)throw Error('書き出し中です');
+  const wasPlaying=playing;recording=true;playing=false;$('exportVideo').disabled=true;$('exportMp4').disabled=true;
+  const label=format==='mp4'?'MP4':'WebM';let renderer;
   try {
-    // Prime the capture track before starting its clock so the first encoded frame
-    // is ready, rather than losing the encoder's startup time from a short clip.
-    await new Promise(resolve=>setTimeout(resolve,120));
-    recorder.start(200);
-    // MediaRecorder may take over a second to accept its first frame at 1080px.
-    // Keep feeding it frames while waiting: awaiting onstart without drawing
-    // can deadlock captureStream. Count the requested duration after startup.
-    const startup=performance.now();
-    while(!encoderStarted){
-      renderer.draw(currentPose());videoTrack.requestFrame?.();
-      await new Promise(r=>setTimeout(r,1000/30));
-      if(performance.now()-startup>15000)throw Error('動画エンコーダーを開始できませんでした。もう一度書き出してください。');
-    }
-    if(!hasAudio&&!speechActive)time=0;
-    playing=true;
-    const start=performance.now(),duration=settings().duration*1000;
-    status(`WebMを録画中… ${settings().duration}秒${hasAudio?'・音声あり':'・無音'}`);
-    while(performance.now()-start<duration) {
-      renderer.draw(currentPose());videoTrack.requestFrame?.();
-      status(`動画を録画中… ${Math.min(100,Math.round((performance.now()-start)/duration*100))}%`);
-      await new Promise(r=>setTimeout(r,1000/30));
-    }
-    renderer.draw(currentPose());videoTrack.requestFrame?.();
-    await new Promise(resolve=>setTimeout(resolve,60));
-    recorder.stop();await done;const saved=await download(new Blob(chunks,{type:mime}),'svg-through-motion.webm');
-    if(format==='mp4'){
-      status('SNS用MP4に変換しています…');
-      const mp4=await (await request(saved.url+'/mp4',{method:'POST'})).json();showExport(mp4,'svg-through-motion.mp4');
-    }
-    status(`${format.toUpperCase()}を data/exports に保存しました。`);
-  }finally{if(recorder.state!=='inactive')recorder.stop();captured.getTracks().forEach(t=>t.stop());recording=false;playing=wasPlaying;$('exportVideo').disabled=false;$('exportMp4').disabled=false;}
+    const copy=structuredClone(project),s={...settings(),background:format==='mp4'?'white':'transparent'};copy.settings=s;
+    status(`${label}用のパーツを準備しています…`);
+    renderer=await prepareCanvasRenderer(copy,1080,{allowUpscale:true,supersample:2});
+    const saved=await streamLoopVideo(renderer,s,request,status,format==='mp4'?'mp4':'webm-alpha');showExport(saved,`svg-through-motion.${format}`);
+    status(`${s.duration}秒・30fpsの${label}を data/exports に保存しました。`);
+  }finally{renderer?.dispose();recording=false;playing=wasPlaying;$('exportVideo').disabled=false;$('exportMp4').disabled=false;}
 }
 
 async function ensureAudio() {
@@ -614,7 +596,7 @@ async function speak() {
     throw error;
   }
 }
-for(const id of ['depthEnabled','depthStrength','tailSwing','tailCycles','irisGaze','earPattern','earCycles','irisX','irisScale','irisCycles','duration','sway','breathe','blink','talking','singleBounce','bounceHeight','hair','chest','ears','headPitch','pitchSway','headTilt','headYaw','headNod','bodyFollow','hairBend','frontHair','backHair','frontHairCycles','backHairCycles','armSwing','springCycles','hairMethod','frontHairMethod','backHairMethod','vowels'])$(id).addEventListener('input',updateSettings);
+for(const id of ['headIdle','depthEnabled','depthStrength','tailSwing','tailCycles','irisGaze','earPattern','earCycles','irisX','irisScale','irisCycles','duration','sway','breathe','blink','talking','singleBounce','bounceHeight','hair','chest','ears','headYawOffset','headRollOffset','headPitch','pitchSway','headTilt','headYaw','headNod','bodyFollow','hairBend','frontHair','backHair','frontHairCycles','backHairCycles','armSwing','springCycles','hairMethod','frontHairMethod','backHairMethod','vowels'])$(id).addEventListener('input',updateSettings);
 $('rigEnabled').onchange=()=>{if(project&&!project.rig)project.rig=normalizeRig({},project);updateSettings();rebuild();};
 $('renderSource').onchange=()=>{updateSettings();rebuild();};
 $('eyeThroughHair').onchange=()=>{updateSettings();rebuild();};
@@ -651,20 +633,22 @@ $('recent').onchange=safe(async()=>{if($('recent').value)adoptProject(await (awa
 $('closeWarnings').onclick=()=>$('warnings').close();
 function editableState(){
  if(!project)return '';
- const keys=['secondaryMotion','id','name','role','x','y','width','height','visible','opacity','pivotX','pivotY','motionStrength','earMotion','faceBase','mouthMode','svgText','closedSvgText','openSvgText','lidAdjust','hairControl','rasterDisabled','closedSource','renderSource','materialId','followPart','attachmentDepth'];
+ const keys=['headFollow','secondaryMotion','id','name','role','x','y','width','height','visible','opacity','pivotX','pivotY','motionStrength','earMotion','tailMotion','wingMotion','faceBase','mouthMode','svgText','closedSvgText','openSvgText','lidAdjust','hairControl','rasterDisabled','closedSource','renderSource','materialId','followPart','motionLink','motionLinkMode','motionLinkAnchor','waistMotion','attachmentDepth'];
  const rig=Object.fromEntries(Object.entries(project.rig||{}).filter(([k])=>!['seamWeights','seamPending','seamVersion'].includes(k)));
  return JSON.stringify({name:project.name,expressionPresets:project.expressionPresets,parts:project.parts.map(p=>Object.fromEntries(keys.filter(k=>p[k]!==undefined).map(k=>[k,p[k]]))),rig,settings:settings(),voice:{tts:ttsUI.snapshot(),text:$('speechText').value,reading:$('speechReading').value,gain:$('gain').value}});
 }
 async function saveProject(){
  needProject();if(savingProject)throw Error('保存中です。少し待ってください。');
- savingProject=true;$('editingWorkspace').inert=true;
+ savingProject=true;$('editingWorkspace').inert=true;const wasPlaying=playing;playing=false;
  try{
-  const state=editableState(),portable=await portableProject();portable.savedAt=new Date().toISOString();let thumbnail='';
-  try{await previewReady;const c=document.createElement('canvas');c.width=160;c.height=Math.round(160*project.height/project.width);c.getContext('2d').drawImage(previewRenderer.canvas,0,0,c.width,c.height);thumbnail=c.toDataURL('image/webp',.7);}catch{}
-  const saved=await download(JSON.stringify(portable),'svg-through-motion.project.json','application/json');
-  rememberCharacter(saved,project.name,{savedAt:portable.savedAt,thumbnail});saveGuard?.saved(state);
+  const choice=await chooseProjectSave(project.name);if(!choice)return null;
+  const portable=await portableProject();portable.name=choice.name;portable.savedAt=new Date().toISOString();let thumbnail='';
+  try{await previewReady;const c=document.createElement('canvas');c.width=480;c.height=Math.round(480*project.height/project.width);c.getContext('2d').drawImage(previewRenderer.canvas,0,0,c.width,c.height);thumbnail=c.toDataURL('image/webp',.8);}catch{}
+  const saved=await (await request('/api/project-saves/'+choice.ticket,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(portable)})).json();
+  project.name=choice.name;$('projectName').textContent=project.name;showExport(saved,choice.name+'.project.json');
+  rememberCharacter(saved,project.name,{savedAt:portable.savedAt,thumbnail});saveGuard?.saved(editableState());
   status('プロジェクトを保存しました。メインメニューから続きを開けます。');return saved;
- }finally{savingProject=false;$('editingWorkspace').inert=false;}
+ }finally{savingProject=false;playing=wasPlaying;$('editingWorkspace').inert=false;}
 }
 document.querySelector('.brand').addEventListener('click',e=>{if(savingProject){e.preventDefault();e.stopImmediatePropagation();}},true);
 $('projectInput').onchange=safe(async e=>{const f=e.target.files[0];if(!f)return;if(f.size>100*1024**2)throw Error('プロジェクトは100MB以下にしてください');adoptProject(JSON.parse(await f.text()),{saved:true});e.target.value='';});
@@ -691,22 +675,33 @@ for(const [id,out] of [['gain','gainOut'],['styleWeight','styleWeightOut']])$(id
 window.addEventListener('beforeunload',()=>{stopVoice();});
 updateSettings();requestAnimationFrame(frame);
 installStartSample({adopt:adoptProject,validate:validateProject});
-installMainMenu({openFile:async data=>{adoptProject(data,{saved:true});await rasterReady;await ensureSeamRig(project);workspaceUI.show('live');}});
+installMainMenu({openFile:async (data,options)=>{document.documentElement.classList.add('route-loading');try{adoptProject(data,{saved:true,mode:'live'});await outputs.prepare(options);}catch(e){document.documentElement.classList.remove('route-loading');throw e;}}});
 safe(async()=>{
-  await refreshProjects();const query=new URLSearchParams(location.search),saved=query.get('project'),prepared=query.get('prepared');
-  if(prepared&&/^[a-f0-9]{32}$/.test(prepared)){
-    adoptProject(await (await request(`/api/projects/${prepared}`)).json());
-    return;
+ const query=new URLSearchParams(location.search),saved=query.get('project'),prepared=query.get('prepared'),runtime=query.get('runtime');
+ try{
+  if(runtime&&/^[a-f0-9]{32}$/.test(runtime)){
+   const url=new URL('/web/player.html',location.origin);url.searchParams.set('session',runtime);url.searchParams.set('prepare','1');url.searchParams.set('inplace','1');
+   for(const key of ['viewX','viewY','viewScale'])if(query.has(key))url.searchParams.set(key,query.get(key));
+   location.replace(url.href);return;
+  }else if(prepared&&/^[a-f0-9]{32}$/.test(prepared)){
+   adoptProject(await (await request(`/api/projects/${prepared}`)).json());
+  }else if(saved&&/^[a-f0-9]{32}$/.test(saved)){
+   const url=`/api/exports/${saved}/svg-through-motion.project.json`;
+   adoptProject(await (await request(url)).json(),{saved:true,mode:query.get('mode')==='use'?'live':'edit'});
+   rememberCharacter({url},project.name,{savedAt:project.savedAt});
+   if(query.get('mode')==='use')await outputs.prepare();
   }
-  if(saved&&/^[a-f0-9]{32}$/.test(saved)){
-    const url=`/api/exports/${saved}/svg-through-motion.project.json`;
-    adoptProject(await (await request(url)).json(),{saved:true});rememberCharacter({url},project.name,{savedAt:project.savedAt});
-    if(new URLSearchParams(location.search).get('mode')==='use'){await rasterReady;await ensureSeamRig(project);workspaceUI.show('live');}
-  }
+ }finally{
+  document.documentElement.classList.remove('route-loading');
+  if(runtime&&project&&workspaceUI?.active==='live')workArea.restore(broadcastView(query));
+  else if(runtime&&project&&workspaceUI?.active==='edit')workspaceUI.editPage('eyes',true);
+ }
+ await refreshProjects();
 })();
 
 const pendingEyes=new Map();let updatingEyes=false;
 async function updateEye(part){
+ if(project?.rifeMorph?.features?.['eye-'+part.role.slice(-1)]){rebuild();await previewReady;return;}
  pendingEyes.set(part.id,part);if(updatingEyes)return;updatingEyes=true;
  try{while(pendingEyes.size){const batch=[...pendingEyes.values()];pendingEyes.clear();const owner=project;await rasterReady;await previewReady;const renderer=previewRenderer;
   if(owner!==project)continue;
@@ -714,13 +709,27 @@ async function updateEye(part){
   await Promise.all(batch.map(p=>renderer.updateClosed(p)));staticFrameKey='';
  }}catch(error){console.error('閉じ目の更新に失敗しました',error);rebuild();}finally{updatingEyes=false;}
 }
+let layerEditor;
+let accessoryUI;
 pivotPicker=installPivotPicker({project:()=>project,pose:currentPose,changed(){rebuild();status('揺れの支点を変更しました。プロジェクトの保存で保持できます。');},begin(){pivotWasPlaying=playing;playing=true;view='motion';updateView();},end(){playing=pivotWasPlaying;staticFrameKey='';}});
-secondaryUI=installSecondaryMotion({project:()=>project,changed(){staticFrameKey='';if(workspaceUI?.active==='motion')playing=true;},pick:parts=>pivotPicker.start(parts)});
+regionUI=installMotionRegionUI({project:()=>project,begin(){chestUI?.cancel();pivotPicker.cancel();regionWasPlaying=playing;playing=false;view='motion';updateView();staticFrameKey='';},end(){playing=regionWasPlaying;staticFrameKey='';}});
+chestUI=installChestRegionUI({project:()=>project,brush:options=>regionUI.start(options),
+ begin(){regionUI.cancel();pivotPicker.cancel();chestWasPlaying=playing;playing=false;view='motion';updateView();staticFrameKey='';},
+ end(){playing=chestWasPlaying;staticFrameKey='';},
+ changed(values){if(!project)return;Object.assign(project.settings,values);saveGuard?.touch();updateSettings();rebuild();status('胸揺れの位置・範囲を更新しました。プロジェクトの保存で保持できます。');}
+});
+secondaryUI=installSecondaryMotion({project:()=>project,changed(structure=false){saveGuard?.touch();staticFrameKey='';if(structure)rebuild();if(workspaceUI?.active==='motion')playing=true;},region:options=>regionUI.start(options),pick:parts=>pivotPicker.start(parts)});
+layerEditor=installSvgLayerEditor({project:()=>project,selected:()=>selected,begin(){playing=false;},end(){staticFrameKey='';},async changed(id){saveGuard?.touch();staticFrameKey='';selectPart(id);rebuild();await previewReady;}});
+accessoryUI=installAccessoryTargets({project:()=>project,changed(){saveGuard?.touch();staticFrameKey='';rebuild();},pick:parts=>pivotPicker.start(parts)});
+function motionLinksCommand(command){const result=executeMotionLinks(project,command);if(result.changed){saveGuard?.touch();staticFrameKey='';renderLayers();rebuild();}return result;}
+function headMotionCommand(c){const result=executeHeadMotion(project,c);if(result.changed){saveGuard?.touch();staticFrameKey='';rebuild();}return result;}
+headUI=installHeadCoordination({project:()=>project,execute:headMotionCommand,previewChanged(){staticFrameKey='';}});
+motionLinksUI=installMotionLinksUI({project:()=>project,selected:()=>selected,execute:motionLinksCommand});
 artworkSources=installArtworkSources({project:()=>project,selected:()=>selected,changed(){renderLayers();rebuild();$('pathInfo').textContent=project.parts.reduce((sum,p)=>sum+(p.paths||0),0).toLocaleString()+' PATHS';status('パーツの絵を変更しました。プレビューで動きを確認し、プロジェクトを保存してください。');return previewReady;}});
  $('neckPivotPick').onclick=()=>{if(!project)return;updateSettings({target:$('neckPivotPick')});pivotPicker.startNeck();};
- $('tailPivotPick').onclick=()=>pivotPicker.start(project.parts.filter(p=>p.visible&&p.role==='tail'));
- $('earTarget').onchange=()=>{if(!project)return;chooseEarLayer(project,$('earTarget').value);rebuild();};
- $('earPivotPick').onclick=()=>pivotPicker.start(project.parts.filter(p=>p.visible&&earEnabled(p)));
+
+
+
  $('armPivotPick').onclick=()=>pivotPicker.start(project.parts.filter(p=>p.visible&&p.deformGroup===$('armPivotTarget').value));
  $('partPivotPick').onclick=()=>{const p=project?.parts.find(p=>p.id===selected);if(p)pivotPicker.start(p.deformGroup?.startsWith('arm-')?project.parts.filter(q=>q.deformGroup===p.deformGroup):[p]);};
  editor=installRigEditor({project:()=>project,selected:()=>selected,rebuild,updateEye,hold(mode){
@@ -729,6 +738,7 @@ artworkSources=installArtworkSources({project:()=>project,selected:()=>selected,
  heldEye=mode;testBlinkUntil=0;
 }});
 
+rifeUI=installRifeMorph({project:()=>project,status,ready:()=>previewReady,changed(){saveGuard?.touch();staticFrameKey='';rebuild();mouthEditor?.redraw();}});
 let mouthEditWasPlaying=false;
 mouthEditor=installMouthEditor({project:()=>project,rebuild,ready:()=>rasterReady,
  begin(){workspaceUI?.editPage('mouth');mouthEditWasPlaying=playing;playing=false;$('play').disabled=true;},end(){playing=mouthEditWasPlaying;$('play').disabled=false;},preview(shape){
@@ -790,6 +800,7 @@ const assistCommand=createAssistController({
 outputs=installStudioOutputs({
   request,
   previewBackground(color){document.documentElement.style.setProperty('--runtime-preview-background',color==='transparent'?'repeating-conic-gradient(#e6eaf1 0% 25%,#f6f7fa 0% 50%) 50%/22px 22px':color);},
+  previewView:()=>workArea.snapshot(),resetPreviewView:()=>workArea.reset(),
   ttsConfig:()=>ttsUI.snapshot(),gain:()=>+$('gain').value,stopSpeech:stopVoice,
   async runtimeSnapshot(){needProject();await ensureSeamRig(project);return portableProject();},
   previewControl(){if(inShapeEditor())workspaceUI.show('motion');},
@@ -802,6 +813,7 @@ outputs=installStudioOutputs({
   stop(){stopVoice();playing=false;manualVowel=null;mouthPreview=null;heldEye='';editor?.resetHold();$('mouth').value=0;},
   async command(cmd){
     if(savingProject)throw Error('プロジェクトを保存しています。完了後に操作してください');
+    if(chestUI?.active||regionUI?.active)throw Error('胸揺れの範囲を調整中です。適用またはキャンセルしてから操作してください');
     if(cmd.action==='assist')return assistCommand(cmd.assist);
     if(cmd.action==='load'){
       stopVoice();
@@ -810,12 +822,26 @@ outputs=installStudioOutputs({
       return {projectId:project.id,name:project.name};
     }
     needProject();
+    if(cmd.action==='layer_edit'){
+      if(layerEditor.active)throw Error('レイヤー補正画面を閉じてから操作してください');
+      const c=cmd.layer_edit,revision=await layerRevision(project);
+      if(c.operation==='inspect')return {revision,parts:project.parts.map(p=>({id:p.id,name:p.name,x:p.x,y:p.y,width:p.width,height:p.height,pivotX:p.pivotX,pivotY:p.pivotY,earMotion:p.earMotion,tailMotion:p.tailMotion,wingMotion:p.wingMotion}))};
+      if(c.expected_revision!==revision)throw Error('レイヤーが変更されています。inspectで再取得してください');
+      applyLayerEdit(project,c);saveGuard?.touch();staticFrameKey='';renderLayers();rebuild();await previewReady;
+      return {changed:true,revision:await layerRevision(project)};
+    }
+    if(cmd.action==='rife')return rifeUI.execute(cmd.rife);
+    if(cmd.action==='head_motion'){const result=headMotionCommand(cmd.head_motion);if(result.changed)await previewReady;headUI.refresh();return result;}
+    if(cmd.action==='motion_links'){const result=motionLinksCommand(cmd.motion_links);if(result.changed)await previewReady;return result;}
     if(cmd.action==='play'){if(inShapeEditor())workspaceUI.show('motion');playing=true;return {playing};}
     if(cmd.action==='pause'){playing=false;return {playing};}
     if(cmd.action==='seek'){if(inShapeEditor())workspaceUI.show('motion');time=cmd.time%settings().duration;playing=false;return {time,playing};}
     if(cmd.action==='settings'){
       saveGuard?.touch();
       for(const [key,value] of Object.entries(cmd.settings)){
+        if(['rifeEyes','rifeMouth','rifeStrength','rifeEyesMode','rifeMouthMode'].includes(key)){project.settings[key]=value;continue;}
+        if(['faceCoordination','faceNeckBlend'].includes(key)){project.settings[key]=value;continue;}
+        if(Object.hasOwn(chestDefaults,key)){project.settings[key]=value;continue;}
         const input=$(key);if(!input)throw Error('未対応の設定です: '+key);
         if(input.type==='checkbox')input.checked=value;else input.value=value;
       }
@@ -864,7 +890,7 @@ const requestShapeAssist=installShapeAssist({snapshot:correctionSnapshot,execute
 motionAssistResult=installMotionAssistResult({execute:assistCommand,retry:previous=>safe(()=>requestShapeAssist('motion',previous))(),projectId:()=>project?.id,showMotion(){workspaceUI.show('motion');time=0;playing=true;}});
 
 workspaceUI=installWorkspaceUI({project:()=>project,closeMouth:()=>mouthEditor?.close(),
- finishProject:safe(async()=>{const button=$('projectFinish'),message=$('projectFinishStatus');button.disabled=true;message.hidden=false;message.textContent='保存しています…';try{const saved=await saveProject();returnToMenu(saved);}catch(error){message.textContent='保存できませんでした。もう一度お試しください。';throw error;}finally{button.disabled=false;}}),
+ finishProject:safe(async()=>{const button=$('projectFinish'),message=$('projectFinishStatus');button.disabled=true;message.hidden=false;message.textContent='保存しています…';try{const saved=await saveProject();if(saved)returnToMenu(saved);else{message.textContent='';message.hidden=true;}}catch(error){message.textContent='保存できませんでした。もう一度お試しください。';throw error;}finally{button.disabled=false;}}),
  beginShapeEdit:step=>(step==='eyes'?editor:mouthEditor)?.beginEdit(),cancelShapeEdit:step=>(step==='eyes'?editor:mouthEditor)?.cancelEdit(),
  requestAssist:step=>safe(()=>requestShapeAssist(step))(),
  showAssistResults,assistSessionFor,refreshAssist:refreshAssistHistory,
@@ -884,7 +910,17 @@ workspaceUI=installWorkspaceUI({project:()=>project,closeMouth:()=>mouthEditor?.
   $('editEyeClosure').value=0;$('eyeClosureOut').value='0%';
   $('mouth').value=1;$('mouthOut').value='100%';
   if(page==='mouth'){ $('mouthShape').value='closed';mouthEditor.open(); }
-  if(page==='eyes')workArea.focus(project,{x:project.rig?.faceX??project.width/2,y:project.rig?.faceY??project.height*.4});
+  if(page==='eyes'){
+   const target=project;
+   // Initial import can still be hidden by route-loading; focus after the
+   // actual canvas and manual controls have their final layout.
+   void previewReady.then(()=>{
+    if(project!==target||workspaceUI?.active!=='edit'||document.body.dataset.editStep!=='eyes')return;
+    workArea.focus(target,{x:target.rig?.faceX??target.width/2,y:target.rig?.faceY??target.height*.4});
+    editor?.drawGuide();
+   });
+  }
+  if(page==='parts'){workArea.reset();editor?.drawGuide();}
  }
 });
 

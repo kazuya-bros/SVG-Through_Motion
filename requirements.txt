@@ -1,5 +1,6 @@
 fastapi==0.128.0
-uvicorn==0.24.0
+uvicorn==0.53.0
+mcp==2.2.0
 websockets>=12,<16
 psd-tools==1.19.0
 vtracer==0.6.15
@@ -9,3 +10,5 @@ scipy>=1.10,<2
 python-multipart>=0.0.18
 httpx>=0.27,<1
 imageio-ffmpeg==0.4.9
+onnxruntime==1.23.2
+protobuf>=4.25,<8

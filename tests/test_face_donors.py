@@ -39,6 +39,15 @@ class FaceDonorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'lash-r'):
             read_donors({'eyes_closed':path},(64,64))
 
+    def test_hidden_donor_names_the_file_kind_and_layer(self):
+        path=self.fixture();psd=PSDImage.open(path)
+        for layer in psd:
+            if layer.name=='mouth':layer.visible=False
+        psd.save(path);raw=path.read_bytes()
+        with self.assertRaisesRegex(ValueError,'閉じ口の差分PSD.*mouth.*非表示.*親グループ'):
+            read_donors({'mouth_closed':path},(64,64))
+        self.assertEqual(path.read_bytes(),raw)
+
     def test_optional_shapes_are_registered_and_base_is_unchanged(self):
         path=self.fixture();source=path.read_bytes()
         data=read_donors({'mouth_closed':path,'i':path},(64,64))

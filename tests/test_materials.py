@@ -84,6 +84,17 @@ class MaterialTest(unittest.TestCase):
         self.assertEqual(m.infer_tag('white-l'),'white-l')
         self.assertEqual(m.infer_tag('front hair--'+'a'*32),'front hair')
 
+    def test_legwear_and_footwear_keep_independent_groups_after_correction(self):
+        self.part('body','blue','topwear',24,15)
+        self.part('legs','purple','legwear',24,30)
+        self.part('shoes','orange','footwear',24,44)
+        project=m.build_svg(self.path,self.state,self.path/'svg','light',lambda *_:None)
+        for key in ('legwear','footwear'):
+            part=next(p for p in project['parts'] if p.get('sourceLayerName')==key)
+            self.assertTrue(part['independentAccessory'])
+            self.assertEqual(part['deformGroup'],key)
+            self.assertTrue((self.path/'svg'/part['svg']).is_file())
+
     def test_psd_anatomical_names_map_to_screen_sides(self):
         psd=PSDImage.new('RGBA',(64,64))
         PixelLayer.frompil(Image.new('RGBA',(8,8),'red'),psd,name='eyelash-l',left=42,top=12)
@@ -136,6 +147,56 @@ class MaterialTest(unittest.TestCase):
             # Undo can refer to retained immutable assets after cutting.
             undo=client.put('/api/materials/'+state['id'],json=dict(revision=1,name='Undo',layers=self.state['layers']))
             self.assertEqual(undo.status_code,200,undo.text)
+
+
+    def test_brush_cut_preserves_unpainted_pixels_alpha_and_follow(self):
+        import base64
+        import io
+        part=self.part('arm',(20,40,60,200),'handwear-l',8,10);part['scale']=2
+        root=self.path/self.state['id'];root.mkdir()
+        original=(self.path/part['asset']).read_bytes();(root/part['asset']).write_bytes(original)
+        m.persist(root,self.state)
+        mask=Image.new('RGBA',(16,16))
+        mask.putpixel((2,3),(255,255,255,255));mask.putpixel((6,8),(255,255,255,128))
+        stream=io.BytesIO();mask.save(stream,format='PNG')
+        body=dict(revision=0,part_id=part['id'],rect=[0,0,16,16],cut_source=True,
+                  mask_png='data:image/png;base64,'+base64.b64encode(stream.getvalue()).decode(),name='指先')
+        with patch.object(m,'STORE',self.path):
+            client=TestClient(app);r=client.post('/api/materials/'+self.state['id']+'/extract',json=body)
+            self.assertEqual(r.status_code,200,r.text)
+            result=r.json();base,cut=result['layers']
+            self.assertEqual((cut['name'],cut['x'],cut['y'],cut['scale'],cut['parent']),('指先',12,16,2,part['id']))
+            a=m.checked_image(root/base['asset']);b=m.checked_image(root/cut['asset'])
+            self.assertEqual(b.size,(5,6))
+            self.assertEqual(a.getpixel((2,3))[3],0)
+            self.assertEqual(b.getpixel((0,0)),(20,40,60,200))
+            self.assertEqual(a.getpixel((6,8))[3]+b.getpixel((4,5))[3],200)
+            self.assertEqual(b.getpixel((4,5))[3],100)
+            self.assertEqual(a.getpixel((4,5)),(20,40,60,200))
+            self.assertEqual(b.getpixel((2,2))[3],0)
+            self.assertEqual((root/part['asset']).read_bytes(),original)
+            # A retried request cannot duplicate a layer with the stale revision.
+            self.assertEqual(client.post('/api/materials/'+self.state['id']+'/extract',json=body).status_code,409)
+
+    def test_brush_mask_validation_and_copy_respect_existing_crop(self):
+        import base64
+        import io
+        part=self.part('face','red','face');part['crop']=[4,4,12,12]
+        root=self.path/self.state['id'];root.mkdir();(root/part['asset']).write_bytes((self.path/part['asset']).read_bytes());m.persist(root,self.state)
+        def encoded(image):
+            stream=io.BytesIO();image.save(stream,format='PNG');return base64.b64encode(stream.getvalue()).decode()
+        body=dict(revision=0,part_id=part['id'],rect=[0,0,16,16],cut_source=False)
+        with patch.object(m,'STORE',self.path):
+            client=TestClient(app)
+            for mask in ('invalid',encoded(Image.new('L',(2,2),255)),encoded(Image.new('L',(16,16),0))):
+                r=client.post('/api/materials/'+self.state['id']+'/extract',json={**body,'mask_png':mask})
+                self.assertEqual(r.status_code,422,r.text)
+                self.assertEqual(m.read(self.state['id'])['revision'],0)
+            mask=Image.new('L',(16,16));mask.paste(255,(1,1,7,7))
+            r=client.post('/api/materials/'+self.state['id']+'/extract',json={**body,'mask_png':encoded(mask)})
+            self.assertEqual(r.status_code,200,r.text)
+            base,cut=r.json()['layers'];self.assertEqual(base,part)
+            self.assertEqual((cut['x'],cut['y']),(4,4));self.assertEqual(m.checked_image(root/cut['asset']).size,(3,3))
 
 
 if __name__=='__main__':unittest.main()

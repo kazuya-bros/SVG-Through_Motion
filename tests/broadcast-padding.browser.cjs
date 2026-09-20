@@ -1,0 +1,31 @@
+const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=require('node:fs');
+const base='http://127.0.0.1:18809',out='output/verification/';
+(async()=>{const browser=await chromium.launch(),page=await browser.newPage({viewport:{width:1280,height:920}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const response=await page.request.get('http://127.0.0.1:18808/api/runtime/sessions/a2bdfa359ef74baea13b6c93d651d77f/project'),project=(await response.json()).project;
+ await page.goto(base+'/web/player.html?display=1');
+ const result=await page.evaluate(async project=>{
+  const {prepareCanvasRenderer}=await import('/web/canvas-renderer.js?v=mouth-editor-9'),{prepareBroadcastCharacter}=await import('/web/broadcast-character.js'),{createBroadcastLookRenderer}=await import('/web/broadcast-look-renderer.js');
+  const pose={sway:0,breathe:20,blinkL:0,blinkR:0,mouth:0,yaw:.15,pitch:0};project.settings={...project.settings,background:'transparent'};
+  const old=await prepareCanvasRenderer(project,640),before=createBroadcastLookRenderer(old.canvas),next=await prepareBroadcastCharacter(project,640),after=createBroadcastLookRenderer(next.canvas),look={outline:true,outline_width:12,outline_color:'#8c91db'};
+  old.draw(pose);before.draw(look);next.draw(pose,look);after.draw(look);
+  const alpha=(c,x,y,w,h)=>{const d=c.getContext('2d').getImageData(x,y,w,h).data;let n=0;for(let i=3;i<d.length;i+=4)if(d[i]>100)n++;return n;};
+  const pad=Math.round(-next.canvas.viewport.y*640/project.height);
+  const stats={oldTop:alpha(before.canvas,0,0,640,1),newOuterTop:alpha(after.canvas,0,0,after.canvas.width,1),recovered:alpha(after.canvas,0,0,after.canvas.width,pad),pad,viewport:next.canvas.viewport};
+  const images={before:before.canvas.toDataURL(),after:after.canvas.toDataURL()};
+  // Picking still sees the same garment with the added drawing margin.
+  const v=next.canvas.viewport,hit=next.pick((project.width*.49-v.x)/v.width,(project.height*.85-v.y)/v.height,pose);stats.picked=hit?.part.id;
+  before.dispose();after.dispose();old.dispose();next.dispose();return {stats,images};
+ },project);
+ assert(result.stats.oldTop>5,result.stats);assert.equal(result.stats.newOuterTop,0);assert(result.stats.recovered>100,result.stats);assert(result.stats.picked);
+ for(const [key,url]of Object.entries(result.images))fs.writeFileSync(out+'broadcast-padding-'+key+'.png',Buffer.from(url.split(',')[1],'base64'));
+ const r=await page.request.post(base+'/api/runtime/sessions',{data:{project,tts:{engine:'browser'},accepting:false,ai_enabled:false}});assert.equal(r.status(),201);const sid=(await r.json()).session_id;
+ const url=base+'/web/player.html?session='+sid+'&prepare=1&mode=idle&background=%2300ff00&viewScale=1.12&viewY=.12';await page.goto(url);await page.waitForSelector('#broadcastLook input:enabled',{timeout:120000});
+ await page.locator('[data-look=outline]').check();await page.locator('[data-look=outline_width]').evaluate(e=>{e.value=12;e.dispatchEvent(new Event('input',{bubbles:true}))});await page.waitForTimeout(500);
+ const stageURL=base+'/api/stage/sessions/'+sid,stage=await(await page.request.get(stageURL)).json();stage.baseline.appearance.emotion='blush';await page.request.put(stageURL,{data:{revision:stage.revision,mode:'fixed',baseline:stage.baseline}});
+ await page.locator('[data-action=place-blush]').click();const face=project.parts.find(p=>p.faceBase||p.name==='face'),box=await page.locator('#stage canvas').boundingBox(),v=result.stats.viewport;
+ await page.mouse.click(box.x+(face.x+face.width*.6-v.x)/v.width*box.width,box.y+(face.y+face.height*.75-v.y)/v.height*box.height);await page.locator('[data-done]').click();await page.waitForTimeout(600);
+ const look=(await(await page.request.get(stageURL)).json()).baseline.appearance;assert(Math.abs(look.blush_x-.08)<.02,look.blush_x);assert(Math.abs(look.blush_y-.02)<.02,look.blush_y);
+ await page.locator('#broadcastLook [data-look=outline]').scrollIntoViewIfNeeded();await page.screenshot({path:out+'broadcast-padding-ui.png'});
+ const obs=await browser.newPage({viewport:{width:900,height:900}});obs.on('pageerror',e=>errors.push(e.message));await obs.goto(base+'/web/player.html?session='+sid+'&display=1');await obs.waitForSelector('#stage canvas',{timeout:120000});await obs.waitForTimeout(600);assert(await obs.locator('#stage canvas').evaluate(c=>c.width>1080));
+ assert.deepEqual(errors,[]);fs.writeFileSync(out+'broadcast-padding-result.json',JSON.stringify({sid,url,...result.stats,errors},null,2));console.log(result.stats);await browser.close();
+})().catch(e=>{console.error(e);process.exit(1)});

@@ -29,10 +29,10 @@ body[data-workspace-mode=live] #workspaceMode{color:var(--accent);border-color:v
 #editingWorkspace>.left-panel{grid-column:1;grid-row:2;padding:0 10px 10px;position:static;max-height:none}
 #editingWorkspace>.center-panel{grid-column:2;grid-row:2}
 #editingWorkspace>.right-panel{grid-column:3;grid-row:2}
-body:not([data-task=edit]) #editingWorkspace{grid-template-columns:minmax(260px,1fr) 334px}
-body:not([data-task=edit]) #editingWorkspace>.left-panel{display:none}
-body:not([data-task=edit]) #editingWorkspace>.center-panel{grid-column:1}
-body:not([data-task=edit]) #editingWorkspace>.right-panel{grid-column:2}
+body:not([data-task=edit][data-edit-step=parts]) #editingWorkspace{grid-template-columns:minmax(260px,1fr) 334px}
+body:not([data-task=edit][data-edit-step=parts]) #editingWorkspace>.left-panel{display:none}
+body:not([data-task=edit][data-edit-step=parts]) #editingWorkspace>.center-panel{grid-column:1}
+body:not([data-task=edit][data-edit-step=parts]) #editingWorkspace>.right-panel{grid-column:2}
 #layerPalette{display:flex;flex-direction:column;flex:1;min-height:0;max-height:none;margin:0;padding:0;border:0}
 #layerPalette>h3{display:flex;align-items:center;justify-content:space-between;flex-shrink:0;padding:18px 6px 0;margin:0;font-size:14px}
 .layer-instruction{font-size:11px;color:var(--muted);margin:9px 6px 14px;flex-shrink:0}
@@ -45,9 +45,9 @@ body:not([data-task=edit]) #editingWorkspace>.right-panel{grid-column:2}
 #layerPalette .layer:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 #layerPalette>.layers{min-height:0;max-height:none;overflow:auto;flex:1}
 #layerPalette .layer{gap:7px;padding:7px 5px}#layerPalette .layer img{width:30px;height:30px}#layerPalette .layer .layer-name{max-width:140px;font-size:11px}#layerPalette .layer .layer-role{display:block;font-size:9px}
-@media(min-width:1600px){#editingWorkspace{grid-template-columns:244px minmax(400px,1fr) 360px}body:not([data-task=edit]) #editingWorkspace{grid-template-columns:minmax(400px,1fr) 360px}}
-@media(max-width:1120px){#editingWorkspace{grid-template-columns:190px minmax(260px,1fr) 304px}body:not([data-task=edit]) #editingWorkspace{grid-template-columns:minmax(260px,1fr) 304px}#workflowNav{padding:7px 12px}#workflowNav button{padding:7px;gap:5px}#workflowNav button strong{font-size:12px}#layerPalette .layer .layer-name{max-width:107px}}
-@media(max-width:760px){#editingWorkspace{display:grid;height:auto;min-height:0;grid-template-columns:minmax(0,1fr);grid-template-rows:62px auto auto auto}body:not([data-task=edit]) #editingWorkspace{grid-template-columns:minmax(0,1fr);grid-template-rows:62px auto auto}#workflowNav{padding:7px 8px;gap:4px}#workflowNav button{min-width:135px;flex:1 0 auto}#editingWorkspace>.left-panel{grid-column:1;grid-row:2;max-height:200px;height:200px;border-right:0;border-bottom:1px solid var(--line)}#editingWorkspace>.center-panel{grid-column:1;grid-row:3;height:720px;min-height:640px}#editingWorkspace>.right-panel{grid-column:1;grid-row:4;border-left:0;border-top:1px solid var(--line)}body:not([data-task=edit]) #editingWorkspace>.center-panel{grid-column:1;grid-row:2}body:not([data-task=edit]) #editingWorkspace>.right-panel{grid-column:1;grid-row:3}#layerPalette .layer .layer-name{max-width:none}#editingWorkspace .inspector-scroll{overflow:visible}}
+@media(min-width:1600px){#editingWorkspace{grid-template-columns:244px minmax(400px,1fr) 360px}body:not([data-task=edit][data-edit-step=parts]) #editingWorkspace{grid-template-columns:minmax(400px,1fr) 360px}}
+@media(max-width:1120px){#editingWorkspace{grid-template-columns:190px minmax(260px,1fr) 304px}body:not([data-task=edit][data-edit-step=parts]) #editingWorkspace{grid-template-columns:minmax(260px,1fr) 304px}#workflowNav{padding:7px 12px}#workflowNav button{padding:7px;gap:5px}#workflowNav button strong{font-size:12px}#layerPalette .layer .layer-name{max-width:107px}}
+@media(max-width:760px){#editingWorkspace{display:grid;height:auto;min-height:0;grid-template-columns:minmax(0,1fr);grid-template-rows:62px auto auto auto}body:not([data-task=edit][data-edit-step=parts]) #editingWorkspace{grid-template-columns:minmax(0,1fr);grid-template-rows:62px auto auto}#workflowNav{padding:7px 8px;gap:4px}#workflowNav button{min-width:135px;flex:1 0 auto}#editingWorkspace>.left-panel{grid-column:1;grid-row:2;max-height:200px;height:200px;border-right:0;border-bottom:1px solid var(--line)}#editingWorkspace>.center-panel{grid-column:1;grid-row:3;height:720px;min-height:640px}#editingWorkspace>.right-panel{grid-column:1;grid-row:4;border-left:0;border-top:1px solid var(--line)}body:not([data-task=edit][data-edit-step=parts]) #editingWorkspace>.center-panel{grid-column:1;grid-row:2}body:not([data-task=edit][data-edit-step=parts]) #editingWorkspace>.right-panel{grid-column:1;grid-row:3}#layerPalette .layer .layer-name{max-width:none}#editingWorkspace .inspector-scroll{overflow:visible}}
 
 /* The launch screen has no editing or input-device navigation. */
 body[data-workspace-mode=live] #editingWorkspace{grid-template-rows:minmax(0,1fr)}
@@ -83,6 +83,11 @@ body[data-task=edit] .mouth-history{display:none}
 
 .hair-group{margin:16px 0;padding:14px;border:1px solid var(--line);border-radius:9px}.hair-group>label{display:block;margin:12px 0}.hair-group .slider-label{margin:15px 0!important}.hair-group h3{margin-bottom:10px}
 #pivotPicker{position:absolute;z-index:12;cursor:crosshair;touch-action:none;pointer-events:auto;outline:none;padding:0}
+#chestRegionGuide{position:absolute;z-index:12;cursor:crosshair;touch-action:none;pointer-events:auto;outline:none;padding:0}
+#chestRegionGuide:focus-visible{outline:2px solid #a5aff4;outline-offset:-2px}
+#chestRegionGuide [data-handle="rx"]{cursor:ew-resize}#chestRegionGuide [data-handle="ry"]{cursor:ns-resize}
+.chest-region-controls{margin-top:12px}.chest-region-controls .row{flex-wrap:wrap}
+.material-cut-entry{display:block;margin:8px 0 12px;padding:8px;border:1px solid #dce2ee;border-radius:8px;text-align:center;font-size:11px;color:#5364df;text-decoration:none;background:white}
 #pivotPicker:focus-visible{outline:2px solid #a5aff4;outline-offset:-2px}
 .pivot-picker-actions{position:absolute;z-index:15;left:12px;right:12px;bottom:28px;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:8px;padding:10px;background:#fffffff2;border:1px solid var(--line);border-radius:10px;font-size:12px}
 .pivot-picker-actions span{flex:1;min-width:180px}.pivot-picker-actions button{min-height:34px}

@@ -49,12 +49,11 @@ def closed_mouth_svg(image):
     central=np.isfinite(top)&(columns>=left+(right-left)*.1)&(columns<=right-(right-left)*.1)
     if central.sum()<3:return None
     fit=np.polyfit((columns[central]-left)/(right-left),top[central],2)
-    t=np.linspace(0,1,21);curve=np.polyval(fit,t)
-    offsets=(curve-np.median(curve))*.6
-    # Bound the whole curve uniformly; clipping individual points makes flat
-    # shelves joined by a steep step, especially on small, tilted mouths.
-    offsets*=min(1,h*.2/max(float(np.max(np.abs(offsets))),1e-6))
-    curve=h/2+offsets
+    t=np.linspace(0,1,21)
+    tilt=float(np.polyval(fit,1)-np.polyval(fit,0))*.6
+    tilt=float(np.clip(tilt,-h*.3,h*.3))
+    smile=min(h*.16,(right-left)*.07)
+    curve=h/2+tilt*(t-.5)+smile*(4*t*(1-t)-.5)
     rgb=np.median(a[:,:,:3][ink],axis=0).astype(int)
     color='#'+''.join(f'{c:02x}' for c in rgb)
     # Retain readable ink thickness instead of flattening it along with the cavity.

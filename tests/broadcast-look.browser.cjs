@@ -1,0 +1,40 @@
+const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=require('fs'),path=require('path');
+const base='http://127.0.0.1:18807',out=path.resolve('output/verification');
+(async()=>{const browser=await chromium.launch(),page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const source=await page.request.get('http://127.0.0.1:18765/api/projects/7a8350eb05654f1e9132dc9130aca62b'),project=await source.json();project.settings.renderSource='svg';
+ const created=await page.request.post(base+'/api/runtime/sessions',{data:{project,tts:{engine:'browser'}}});assert.equal(created.status(),201);const {session_id:sid}=await created.json(),stage=base+'/api/stage/sessions/'+sid;
+ fs.writeFileSync(path.join(out,'broadcast-look-session.json'),JSON.stringify({session_id:sid}));
+ const get=async()=>await(await page.request.get(stage)).json();
+ const waitLook=async predicate=>{for(let n=0;n<200;n++){if(predicate((await get()).baseline.appearance))return;await page.waitForTimeout(100)}throw Error('Appearance state did not settle')};
+ await page.goto(base+'/web/player.html?session='+sid+'&prepare=1&background=transparent');await page.waitForSelector('#broadcastLook input:enabled',{timeout:90000});
+ const control=k=>page.locator('#broadcastLook [data-look="'+k+'"]');
+ await control('outline').check();await control('light').selectOption('sunset');await waitLook(a=>a.light==='sunset');
+ const obs=await browser.newPage({viewport:{width:900,height:900}});obs.on('pageerror',e=>errors.push(e.message));await obs.goto(base+'/web/player.html?session='+sid+'&display=1');await obs.waitForSelector('#stage canvas');
+ await page.bringToFront();await control('emotion').selectOption('blush');await waitLook(a=>a.emotion==='blush');
+ await page.locator('#controls').evaluate(e=>e.scrollTop=0);await page.waitForTimeout(300);await page.screenshot({path:path.join(out,'broadcast-look-preparation.png')});
+ // Exercise actual upload route and UI; reference background is not drawn into transparent output.
+ const png=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=c.height=64;const x=c.getContext('2d');x.fillStyle='#5272ae';x.fillRect(0,0,64,64);return c.toDataURL().split(',')[1]});
+ await page.locator('[data-upload=light_asset_id]').setInputFiles({name:'night-reference.png',mimeType:'image/png',buffer:Buffer.from(png,'base64')});
+ await waitLook(a=>!!a.light_asset_id);
+ await page.locator('[data-upload=emotion_asset_id]').setInputFiles({name:'effect-image.png',mimeType:'image/png',buffer:Buffer.from(png,'base64')});
+ await waitLook(a=>a.emotion==='image');
+ assert((await get()).baseline.appearance.emotion_asset_id);assert.equal((await get()).baseline.appearance.light,'background');
+ // Colour update rebuilds the cached renderer, then preset persistence retains its rule.
+ await page.locator('summary').filter({hasText:'パーツの色を変える'}).click();await page.locator('#broadcastLook [data-field=part]').selectOption('p006');
+ await page.locator('#broadcastLook [data-action=color]').click();await waitLook(a=>a.colors.length===1);
+ await page.waitForFunction(()=>document.querySelector('#broadcastLook [data-field=status]').textContent==='見た目を反映しました',{},{timeout:90000});
+ const configured=(await get()).baseline.appearance;assert.equal(configured.colors[0].part_id,'p006');
+ await page.locator('summary').filter({hasText:'見た目のプリセット'}).click();await page.locator('#broadcastLook [data-field=name]').fill('結合確認');await page.locator('#broadcastLook [data-action=save]').click();await page.waitForFunction(()=>document.querySelector('#broadcastLook [data-field=status]').textContent.includes('保存しました'));
+ await control('light').selectOption('none');await page.waitForTimeout(400);await page.locator('#broadcastLook [data-action=load]').click();await waitLook(a=>a.light==='background');
+ const restored=(await get()).baseline.appearance;assert.deepEqual(restored.colors,configured.colors);
+ // Broadcast mode keeps controls out of the capture, while shortcuts update both renderers.
+ await page.locator('#enterBroadcast').click();await page.waitForFunction(()=>document.body.classList.contains('broadcasting'));await page.locator('#stage').click({position:{x:30,y:200}});
+ await page.keyboard.press('Alt+4');await waitLook(a=>a.emotion==='gloom');
+ await page.keyboard.press('Alt+6');const effect=await(await page.request.get(base+'/api/runtime/sessions/'+sid+'/status')).json().catch(()=>null);
+ await page.waitForTimeout(700);await page.screenshot({path:path.join(out,'broadcast-look-entrance.png')});
+ await page.waitForTimeout(3600);await page.keyboard.press('Alt+0');await waitLook(a=>a.emotion==='none');
+ await obs.bringToFront();await obs.waitForTimeout(300);const alpha=await obs.evaluate(()=>{const c=document.querySelector('#stage canvas'),p=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let opaque=0,clear=0;for(let i=3;i<p.length;i+=4){if(p[i]>200)opaque++;if(!p[i])clear++}return{opaque,clear}});assert(alpha.opaque>1000&&alpha.clear>1000);await obs.screenshot({path:path.join(out,'broadcast-look-obs.png')});
+ const preview=await page.request.get(stage+'/preview');assert.equal(preview.status(),200);assert.equal(preview.headers()['content-type'],'image/png');
+ await page.bringToFront();await page.keyboard.press('Escape');await page.waitForFunction(()=>document.body.classList.contains('preparing'));await page.locator('#controls').evaluate(e=>e.scrollTop=0);await page.screenshot({path:path.join(out,'broadcast-look-final.png')});
+ assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'broadcast-look-verification.json'),JSON.stringify({sid,realProjectParts:project.parts.length,uiAndAPI:true,backgroundUpload:true,customEmotionUpload:true,colorRebuild:true,presetRoundtrip:true,broadcastShortcuts:true,obsTransparentPixels:alpha,agentPreview:true,errors},null,2));console.log('Broadcast appearance integration passed:',sid,alpha);await browser.close();
+})().catch(e=>{console.error(e);process.exit(1)});

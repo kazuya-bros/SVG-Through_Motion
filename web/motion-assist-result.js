@@ -1,3 +1,5 @@
+import {aiCorrectionUiVisible} from './ui-flags.js';
+
 // Confirm the applied animation on the existing motion stage; no TTS or output launch.
 export function installMotionAssistResult({execute,retry,showMotion,projectId}){
  const card=document.createElement('section');card.id='motionAssistResult';card.className='control-card';card.hidden=true;
@@ -6,7 +8,7 @@ export function installMotionAssistResult({execute,retry,showMotion,projectId}){
  const $=s=>card.querySelector(s);let state=null,pending=false,dismissed=null;
  function update(next,operation){
   state=next;const eligible=next?.workflow?.mode==='from_inputs'&&next.project_id===projectId()&&next.applied;
-  card.hidden=!eligible||dismissed===next?.session_id;
+  card.hidden=!aiCorrectionUiVisible||!eligible||dismissed===next?.session_id;
   if(eligible){$('p').textContent='目・口と動きを反映しました。プレビューで仕上がりを確認してください。';if(['finish','apply'].includes(operation)){dismissed=null;card.hidden=false;showMotion();}}
  }
  $('[data-ok]').onclick=()=>{dismissed=state?.session_id;card.hidden=true;};

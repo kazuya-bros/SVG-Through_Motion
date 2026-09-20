@@ -1,23 +1,25 @@
 <!doctype html>
-<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SVG-Through Motion — アプリ設定</title><link rel="stylesheet" href="desktop.css"></head>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SVG-Through Motion — 保存先と接続</title><link rel="stylesheet" href="desktop.css"></head>
 <body>
-<header><div class="mark" aria-hidden="true">S</div><div><strong>SVG-Through Motion</strong><p>デスクトップアプリ</p></div><span id="connection" class="badge">起動前</span></header>
+<header><button id="home" class="mark" aria-label="元の画面に戻る" title="元の画面に戻る" disabled><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span></button><div><strong>SVG-Through Motion</strong><p id="settingsTitle">保存先と接続</p></div><span id="connection" class="badge">準備中</span></header>
 <main>
-<section class="card launch"><div><p class="eyebrow">WORKSPACE</p><h1>制作をはじめる</h1><p>素材とプロジェクトの保存先を選んで起動します。</p></div>
-<label for="dataDir">素材・プロジェクトの保存先</label><div class="path"><input id="dataDir" placeholder="例：E:\SVG-Through\data"><button id="pickData">フォルダを選ぶ</button></div>
-<p class="hint">以前の制作を続ける場合は、既存の data フォルダを選んでください。</p>
-<details id="advanced"><summary>See-Through・接続の設定</summary><label for="seeThrough">準備済みSee-Through環境（空欄で自動検出）</label><div class="path"><input id="seeThrough"><button id="pickSee">選ぶ</button></div><label for="port">アプリ用ポート</label><input id="port" type="number" min="1" max="65535" value="18765"><p class="hint">起動後の変更は、アプリを終了して再度起動すると行えます。</p></details>
-<div class="actions"><button id="start" class="primary">アプリを起動する</button><span id="serverUrl" class="hint"></span></div>
+<section id="connectionSettings" class="card launch"><div><p class="eyebrow">アプリ全体の管理</p><h1>保存先と接続</h1><p>保存済みの素材の場所を変更したり、See-Throughの環境を指定したりする画面です。通常は変更せず、そのまま使えます。</p></div>
+<p id="startupError" class="errors" role="alert" hidden></p>
+<label for="dataDir">アプリが素材・プロジェクトを保管するフォルダー</label><div class="path"><input id="dataDir" placeholder="例：E:\SVG-Through\data"><button id="pickData">フォルダを選ぶ</button></div>
+<p class="hint">初回はアプリと同じ場所の data フォルダを自動で用意します。以前の素材を使う場合は、その data フォルダを選んでください。保存済みキャラクターを1つ開く操作は、メインメニューの「キャラクターを使う」から行えます。</p>
+<details id="advanced"><summary>詳細：See-Throughの場所・接続ポート</summary><label for="seeThrough">準備済みSee-Through環境（空欄で自動検出）</label><div class="path"><input id="seeThrough"><button id="pickSee">選ぶ</button></div><label for="port">アプリ用ポート</label><input id="port" type="number" min="1" max="65535" value="18765"></details>
+<div class="actions"><button id="start" class="primary">再試行してメインメニューを開く</button><button id="saveConnection" class="primary" hidden>保存する（次回起動から適用）</button><span id="serverUrl" class="hint"></span></div>
+<p id="restartHint" class="hint" hidden>変更したら保存し、この画面下部の「アプリを終了」から終了して起動し直してください。</p>
 </section>
-<section class="card"><div class="section-heading"><div><p class="eyebrow">EXPRESSION SHORTCUTS</p><h2>どの画面からでも、表情を切り替える</h2></div><label class="switch"><input id="enabled" type="checkbox">有効にする</label></div>
-<p>ゲームやOBSを操作している間も使えます。制作画面でキャラクターの出力を開いてから設定してください。</p>
+<section id="hotkeySettings" class="card" hidden><div class="section-heading"><div><p class="eyebrow">EXPRESSION SHORTCUTS</p><h2>どの画面からでも、表情・演出を切り替える</h2></div><label class="switch"><input id="enabled" type="checkbox">有効にする</label></div>
+<p>ゲームやOBSを操作している間も使えます。この設定を開いた表示ウィンドウが操作対象に選ばれます。</p>
 <div class="target"><label for="target">操作するキャラクター<select id="target"><option value="">出力を選んでください</option></select></label><button id="refresh">出力一覧を更新</button></div>
-<p class="hint">誤操作を防ぐため、アプリ起動後は操作対象を選び直します。キーの割り当ては保存されます。</p>
-<div class="table-wrap"><table><thead><tr><th>表情</th><th>グローバルキー</th><th>切り替え方</th><th><span class="sr-only">操作</span></th></tr></thead><tbody id="bindings"></tbody></table></div>
+<p class="hint">「設定を保存・適用」で操作対象とキーを確定します。キーの割り当ては次回も引き継がれます。</p>
+<div class="table-wrap"><table><thead><tr><th>キャラクター</th><th>表情・演出</th><th>グローバルキー</th><th>切り替え方</th><th><span class="sr-only">操作</span></th></tr></thead><tbody id="bindings"></tbody></table></div>
 <div class="actions"><button id="add">割り当てを追加</button><button id="save" class="primary">設定を保存・適用</button></div>
 <p class="hint">CtrlまたはAltを含むキーを指定します。入力欄でキーを押すと組み合わせを入力できます。入力中は、その組み合わせが別アプリにも作用する場合があります。</p>
 <p id="registered" class="registration">ホットキーは停止中です。</p><ul id="errors" class="errors"></ul><p id="lastEvent" class="hint" aria-live="polite"></p>
 </section>
 <p id="status" role="status" aria-live="polite"></p>
-<footer><span>制作・出力画面の「アプリ」メニューから、この設定を開けます。</span><button id="exit">アプリを終了</button></footer>
+<footer><span>ホットキーはキャラクターの表示ウィンドウの操作パネルの「ホットキー設定」から設定できます。</span><button id="exit">アプリを終了</button></footer>
 </main><script type="module" src="desktop.js"></script></body></html>

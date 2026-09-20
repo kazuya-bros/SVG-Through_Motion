@@ -46,6 +46,68 @@ class HybridTests(unittest.TestCase):
         self.assertEqual(len(p['rig']['hairWeights']),33**2)
         self.assertEqual(next(x for x in p['parts'] if x['role']=='iris-r')['x'],29)
 
+    def test_hidden_required_features_explain_how_to_save_again(self):
+        self.fixture()
+        path = self.root/'face.psd'
+        for name in ('eyewhite-r', 'mouth'):
+            with self.subTest(name=name):
+                psd = PSDImage.open(path)
+                for layer in psd: layer.visible = layer.name != name
+                psd.save(path); raw = path.read_bytes()
+                with self.assertRaisesRegex(ValueError, name + '.*非表示.*ON'):
+                    convert_hybrid(path, self.root/'original.png', self.root/name, source_open=True)
+                self.assertEqual(path.read_bytes(), raw)
+
+    def test_eyewear_keeps_alpha_follows_face_and_respects_front_hair_order(self):
+        for segmented in (False,True):
+            for glasses_on_top in (False,True):
+                with self.subTest(segmented=segmented,glasses_on_top=glasses_on_top):
+                    self.fixture()
+                    psd=PSDImage.open(self.root/'face.psd')
+                    for name in (('front hair','eyewear') if glasses_on_top else ('eyewear','front hair')):
+                        color=(180,20,100,128) if name=='eyewear' else (20,30,40,255)
+                        PixelLayer.frompil(Image.new('RGBA',(20,8),color),psd,name=name,left=22,top=28)
+                    psd.save(self.root/'face.psd')
+                    dest=self.root/f'glasses-{segmented}-{glasses_on_top}'
+                    project=convert_hybrid(self.root/'face.psd',self.root/'original.png',dest,motion_parts=segmented)
+                    parts=project['parts'];glass=next(p for p in parts if p.get('sourceLayerName')=='eyewear')
+                    self.assertTrue(glass['independentAccessory'])
+                    self.assertEqual(glass['role'],'static')
+                    self.assertIn(glass['followPart'],[p['id'] for p in parts if p.get('faceBase') or p['role'].startswith('white-')])
+                    pixel=Image.open(dest/glass['original']).convert('RGBA').getpixel((5,4))
+                    self.assertTrue(all(abs(a-b)<=2 for a,b in zip(pixel,(180,20,100,128))))
+                    self.assertGreater(parts.index(glass),max(i for i,p in enumerate(parts) if p['role'].startswith(('white-','iris-'))))
+                    hair=next(p for p in parts if p['name']=='PSDの前髪')
+                    self.assertEqual(parts.index(glass)>parts.index(hair),glasses_on_top)
+
+    def test_hidden_eyewear_is_not_automatically_enabled(self):
+        self.fixture();psd=PSDImage.open(self.root/'face.psd')
+        layer=PixelLayer.frompil(Image.new('RGBA',(20,8),'purple'),psd,name='eyewear',left=22,top=28)
+        layer.visible=False;psd.save(self.root/'face.psd')
+        project=convert_hybrid(self.root/'face.psd',self.root/'original.png',self.root/'hidden-glasses',motion_parts=True)
+        self.assertFalse(any(p.get('sourceLayerName')=='eyewear' for p in project['parts']))
+
+    def test_legwear_survives_hybrid_conversion_without_being_baked_into_body(self):
+        original=self.fixture();psd=PSDImage.open(self.root/'face.psd')
+        PixelLayer.frompil(Image.new('RGBA',(30,20),'purple'),psd,name='legwear',left=32,top=70)
+        PixelLayer.frompil(Image.new('RGBA',(34,8),'orange'),psd,name='bottomwear',left=30,top=68)
+        psd.save(self.root/'face.psd')
+        ImageDraw.Draw(original).rectangle((32,70,61,89),fill='purple')
+        ImageDraw.Draw(original).rectangle((30,68,63,75),fill='orange')
+        original.save(self.root/'original.png')
+        dest=self.root/'legwear'
+        project=convert_hybrid(self.root/'face.psd',self.root/'original.png',dest,motion_parts=True)
+        parts=project['parts'];leg=next(p for p in parts if p.get('sourceLayerName')=='legwear')
+        bottom=next(p for p in parts if p.get('sourceLayerName')=='bottomwear')
+        self.assertTrue(leg['independentAccessory']);self.assertEqual(leg['deformGroup'],'legwear')
+        self.assertLess(parts.index(leg),parts.index(bottom))
+        self.assertTrue((dest/leg['svg']).is_file())
+        hidden=Image.new('RGBA',original.size)
+        for part in parts:
+            if part is not leg:hidden.alpha_composite(Image.open(dest/part['original']).convert('RGBA'),(part['x'],part['y']))
+        self.assertEqual(hidden.getpixel((40,80)),(255,0,0,255)) # PSD torso is revealed instead of purple source legs.
+        self.assertEqual(hidden.getpixel((40,72)),(255,165,0,255)) # Shorts remain above the removed legs.
+
     def test_front_hair_uses_clean_psd_rgba_in_both_hybrid_modes(self):
         original=self.fixture()
         ImageDraw.Draw(original).rectangle((20,25,43,33),fill=(30,25,25,255))

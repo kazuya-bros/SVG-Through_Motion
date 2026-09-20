@@ -15,7 +15,7 @@ export function installSaveGuard({state,save,enabled,navigate=url=>location.assi
  dialog.querySelector('#saveAndMenu').onclick=async()=>{
   if(busy)return;busy=true;dialog.querySelectorAll('button').forEach(b=>b.disabled=true);
   const message=dialog.querySelector('#saveMenuError');message.hidden=false;message.textContent='保存しています…';
-  try{const result=await save();leaving=true;navigate('/?saved='+result.url.split('/')[3]);}
+  try{const result=await save();if(result){leaving=true;navigate('/?saved='+result.url.split('/')[3]);}else{message.textContent='';message.hidden=true;}}
   catch(e){message.textContent='保存できませんでした。編集内容は残っています。'+e.message;}
   finally{busy=false;dialog.querySelectorAll('button').forEach(b=>b.disabled=false);}
  };

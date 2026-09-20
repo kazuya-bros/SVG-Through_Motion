@@ -7,6 +7,9 @@ source images, versioned edits, alpha masks, attachment IDs and corrected PSDs.
 from __future__ import annotations
 
 import copy
+import base64
+import binascii
+import io
 import json
 import math
 import re
@@ -263,7 +266,8 @@ def build_svg(path, state, dest, preset, progress):
     from .eyelids import attach_closed_lashes
     from .mouths import attach_closed_mouths
     names = export_psd(path, state, dest.parent / (dest.name+'.psd'))
-    project = convert_file(dest.parent / (dest.name+'.psd'), dest, preset=preset, progress=progress)
+    project = convert_file(dest.parent / (dest.name+'.psd'), dest, preset=preset, progress=progress,
+                           role_map={name: source['tag'] for name, source in names.items()})
     parts = project['parts']; mapped = {}
     for p in parts:
         src = names[p['name']]; p['name'] = src['name']; p['materialId'] = src['id']
@@ -271,7 +275,7 @@ def build_svg(path, state, dest, preset, progress):
         p['role'] = src['tag'] if src['tag'] in ['mouth','tail','ear-l','ear-r'] or re.fullmatch(r'(white|iris|lash|brow)-[lr]', src['tag']) else 'static'
         p['deformGroup'] = {'front hair':'front','back hair':'back','handwear-l':'arm-l','handwear-r':'arm-r'}.get(src['tag'], 'core')
         if src['tag']=='eyewear':p['role']='glasses'
-        if src['tag'] in ['headwear','earwear','neckwear','bottomwear','wings']:
+        if src['tag'] in ['headwear','earwear','neckwear','bottomwear','legwear','footwear','wings']:
             p.update(independentAccessory=True,sourceLayerName=src['tag'])
             if src['tag']!='headwear':p['deformGroup']=src['tag']
         if src['tag'] == 'face':
@@ -439,6 +443,31 @@ class Region(BaseModel):
     rect:list[int]=Field(min_length=4,max_length=4)
     cut_source:bool=False
     instruction:str=Field('',max_length=2000)
+    mask_png:str | None=Field(None,max_length=24*1024*1024,description='Optional PNG mask in source-layer pixel coordinates, same size as its asset. RGBA uses alpha; grayscale/RGB uses luminance. Base64 or data:image/png;base64,...')
+    name:str | None=Field(None,min_length=1,max_length=150)
+
+
+def region_mask(body, size):
+    mask=Image.new('L',size)
+    mask.paste(255,tuple(body.rect))
+    if body.mask_png is None:
+        return mask
+    try:
+        raw=body.mask_png
+        if raw.startswith('data:'):
+            if not raw.startswith('data:image/png;base64,'):raise ValueError('PNGを指定してください')
+            raw=raw.split(',',1)[1]
+        data=base64.b64decode(raw,validate=True)
+        with Image.open(io.BytesIO(data)) as source:
+            if source.format!='PNG' or source.size!=size or source.width*source.height>MAX_PIXELS:
+                raise ValueError('マスクは元レイヤーと同じ寸法のPNGにしてください')
+            if 'A' in source.getbands() or 'transparency' in source.info:
+                field=source.convert('RGBA').getchannel('A')
+            else:
+                field=source.convert('L')
+            return Image.fromarray(np.minimum(np.asarray(mask),np.asarray(field)))
+    except (ValueError,OSError,binascii.Error,Image.DecompressionBombError) as e:
+        raise HTTPException(422,'切り出しマスクが不正です: '+str(e)) from e
 
 
 def region_source(mid,body):
@@ -459,14 +488,18 @@ def extract(mid:str,body:Region):
     with mutex:
         path,state,part,im=region_source(mid,body)
         if part['locked']:raise HTTPException(422,'編集ロックを解除してください')
-        crop=im.crop(tuple(body.rect));box=crop.getchannel('A').getbbox()
+        mask=region_mask(body,im.size)
+        alpha=np.asarray(im.getchannel('A'),dtype=np.uint16)
+        selected_alpha=((alpha*np.asarray(mask,dtype=np.uint16)+127)//255).astype(np.uint8)
+        extracted=im.copy();extracted.putalpha(Image.fromarray(selected_alpha))
+        crop=extracted.crop(tuple(body.rect));box=crop.getchannel('A').getbbox()
         if not box:raise HTTPException(422,'選んだ範囲に絵がありません')
         if len(state['layers'])>=100:raise HTTPException(422,'100レイヤーまでです。不要な候補を一覧から外してください')
-        add_image(path,state,crop,part['name']+'の切り出し')
+        add_image(path,state,crop,body.name or part['name']+'の切り出し')
         added=state['layers'].pop();added.update(x=part['x']+(body.rect[0]+box[0])*part['scale'],y=part['y']+(body.rect[1]+box[1])*part['scale'],scale=part['scale'],opacity=part['opacity'],parent=part['id'])
         state['layers'].insert(state['layers'].index(part)+1,added)
         if body.cut_source:
-            im.paste((0,0,0,0),tuple(body.rect));asset_name=uuid.uuid4().hex+'.png';im.save(path/asset_name);part.update(asset=asset_name,crop=None)
+            im.putalpha(Image.fromarray((alpha-selected_alpha).astype(np.uint8)));asset_name=uuid.uuid4().hex+'.png';im.save(path/asset_name);part.update(asset=asset_name,crop=None)
         state['revision']+=1;state['depthCurrent']=False;persist(path,state)
         return state
 
@@ -480,7 +513,7 @@ def assist_region(mid:str,body:Region):
             stream=io.BytesIO();image.save(stream,format='PNG');return stream.getvalue()
         composite=Image.new('RGBA',(state['width'],state['height']))
         for _,image in materialized(path,state):composite.alpha_composite(image)
-        mask=Image.new('L',im.size);mask.paste(255,tuple(body.rect))
+        mask=region_mask(body,im.size)
         with zipfile.ZipFile(path/(name+'.zip'),'w',zipfile.ZIP_DEFLATED) as z:
             z.writestr('context.png',png(composite));z.writestr('part.png',png(im));z.writestr('region.png',png(im.crop(tuple(body.rect))));z.writestr('mask.png',png(mask))
             z.writestr('request.md',f"# パーツ補修依頼\n\n対象: {part['name']}\n役割: {part['tag']}\n\n{body.instruction or '選択範囲の線と塗りの不自然な箇所を補修してください。'}\n\ncontext.pngは参照用です。part.pngの白マスク範囲だけを補修し、範囲外は透明にした同寸法のRGBA PNGを返してください。顔立ち・線幅・色・位置・寸法を保ってください。\n")
@@ -512,7 +545,7 @@ def restore(file:UploadFile=File(...)):
 
 
 @router.post('/{mid}/convert')
-def convert(mid: str, preset: str='balanced'):
+def convert(mid: str, preset: str='quality'):
     from .server import jobs,lock,pool,PROJECTS,space_guard
     from .convert import PRESETS
     if preset not in PRESETS:

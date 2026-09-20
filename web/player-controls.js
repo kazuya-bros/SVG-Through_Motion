@@ -1,15 +1,14 @@
 import {createMicrophoneCapture,waitForMedia,microphoneError} from './microphone-capture.js';
 import {createCameraCapture} from './camera-capture.js';
+import {createModeSwitch} from './broadcast-mode.js';
 
-export function installPlayerControls({mode,base,session}){
- const $=id=>document.getElementById(id),panel=$('controls');let disposed=false,online=false,refreshing=false,micState="stopped",permissionRequest=null,deviceRevision=0;
- $('controlTitle').textContent={mic:'マイクで動かす',camera:'カメラで動かす',api:'AI・外部アプリで話す'}[mode];
- $(mode+'Settings').hidden=false;panel.hidden=false;
+export function installPlayerControls({mode,base,session,onModeChange=()=>{},onStatus=()=>{}}){
+ const $=id=>document.getElementById(id);let disposed=false,online=false,refreshing=false,micState="stopped",permissionRequest=null,deviceRevision=0;
+ $('controlTitle').textContent='配信の準備';
+ function showMode(next){mode=next==='api'?'idle':next;$('inputMode').value=mode;for(const key of ['mic','camera'])$(key+'Settings').hidden=key!==mode;$('apiSettings').hidden=true;$('inputModeHint').textContent=mode==='idle'?'待機モーションで動きます。演出はホットキーで呼び出せます。':'開始すると入力に合わせて動きます。';}
+ showMode(mode);
+ $('desktopSettings').hidden=false;if(window.__SVG_THROUGH_DESKTOP__!==true)$('desktopSettings').querySelector('a').onclick=e=>{e.preventDefault();say('グローバルホットキーはデスクトップ版で設定できます。');};
  function say(text,error=false){$('controlStatus').textContent=text;$('controlStatus').classList.toggle('error',error);}
- function setVisibility(visible){panel.hidden=!visible;$('showSettings').hidden=visible;document.body.classList.toggle('settings-open',visible);}
- $('hideSettings').onclick=e=>{setVisibility(false);if(e.detail===0)$('showSettings').focus();};
- $('showSettings').onclick=()=>{setVisibility(true);$('hideSettings').focus();};
- const onKey=e=>{if(e.key==='Escape'&&!$('integrationHelp').open){e.preventDefault();const visible=panel.hidden;setVisibility(visible);$(visible?'hideSettings':'showSettings').focus();}};window.addEventListener('keydown',onKey);setVisibility(true);
  const mic=createMicrophoneCapture({gate:()=>+$('micGate').value,
   onState(state,text){micState=state;micButtons();say(text,state==='error');$('micHelp').hidden=state!=='error';if(state==='running')void refreshDevices();},
   onLevel:value=>{$('micMeter').value=value;}
@@ -18,6 +17,13 @@ export function installPlayerControls({mode,base,session}){
   motionSettings:()=>({strength:+$('cameraMotion').value,mirror:$('cameraMirror').checked}),
   onState(state,text){const busy=['starting','running'].includes(state);$('cameraStart').disabled=busy||!online;$('cameraStop').disabled=!busy;$('cameraDevice').disabled=busy;say(text,state==='error');$('cameraHelp').hidden=state!=='error';}
  });
+ const switcher=createModeSwitch({initial:mode,
+  async reception(){/* Input selection is independent of AI speech reception. */},
+  stopInputs(){permissionRequest?.abort();permissionRequest=null;mic.stop();camera.stop();},
+  changed(next){showMode(next);onModeChange(next);say('動かし方を切り替えました。');void refresh();}
+ });
+ $('inputMode').onchange=async()=>{const next=$('inputMode').value;$('inputMode').disabled=true;try{await switcher.select(next);}catch(e){showMode(switcher.mode);say(e.message,true);}finally{$('inputMode').disabled=!online;}};
+ $('inputMode').disabled=true;
  function micButtons(){const busy=['starting','running'].includes(micState);$('micStart').disabled=busy||!!permissionRequest||!online;$('micStop').disabled=!busy&&!permissionRequest;$('micDevice').disabled=micState==='starting'||!!permissionRequest;$('micRefresh').disabled=micState==='starting'||!!permissionRequest;}
  async function refreshDevices(){const revision=++deviceRevision;try{
   const devices=await navigator.mediaDevices?.enumerateDevices();if(disposed||revision!==deviceRevision||!devices)return;
@@ -53,8 +59,10 @@ export function installPlayerControls({mode,base,session}){
  $('cameraCenter').onclick=()=>say(camera.recenter()?'今の姿勢を正面にしました。':'カメラを開始し、顔が映った状態で押してください。');
  $('cameraMotion').oninput=()=>{$('cameraMotionValue').value=Math.round(+$('cameraMotion').value*100)+'%';};
  $('micOutputUrl').value=location.href;
- $('displayUrl').value=location.origin+'/web/player.html?session='+encodeURIComponent(session)+'&display=1';
- $('copyDisplay').onclick=async()=>{const status=$('displayCopyStatus');status.hidden=false;try{await navigator.clipboard.writeText($('displayUrl').value);status.textContent='コピーしました。配信ソフトのブラウザソースに貼り付けてください。';}catch{status.textContent='URLを選択してコピーしてください。';$('displayUrl').focus();$('displayUrl').select();}};
+ const displayUrl=new URL('/web/player.html',location.origin);displayUrl.searchParams.set('session',session);displayUrl.searchParams.set('display','1');
+ for(const key of ['viewX','viewY','viewScale']){const value=new URLSearchParams(location.search).get(key);if(value!==null)displayUrl.searchParams.set(key,value);}
+ $('displayUrl').value=displayUrl.href;
+ $('copyDisplay').onclick=async()=>{const status=$('displayCopyStatus');status.hidden=false;try{await navigator.clipboard.writeText($('displayUrl').value);status.textContent='コピーしました。配信ソフトのブラウザソースに貼り付けてください。';}catch{status.textContent='URLを選択してコピーしてください。';$('displayUrl').hidden=false;$('displayUrl').focus();$('displayUrl').select();}};
  $('apiUrl').value=location.origin+'/api/runtime';
  const copy=async text=>{try{await navigator.clipboard.writeText(text);say('コピーしました。');}catch{say('コピーできませんでした。URLを選択してコピーしてください。',true);}};
  $('copyApi').onclick=()=>copyHelp($('apiUrl').value);$('copyCameraUrl').onclick=()=>copy(location.href);$('copyMicUrl').onclick=()=>copy(location.href);
@@ -87,11 +95,11 @@ ${location.origin}/web/runtime-help.html の手順に従い、待機中なら ${
   catch{status.textContent='コピーできませんでした。下の全文を選択してコピーしてください。';const fallback=document.createElement('textarea');fallback.readOnly=true;fallback.value=text;fallback.setAttribute('aria-label','コピーする指示の全文');status.replaceChildren(document.createTextNode(status.textContent),fallback);fallback.focus();fallback.select();}
  };
 
- async function refresh(){if(mode!=='api'||disposed||refreshing)return;refreshing=true;try{const r=await fetch(base);if(!r.ok)throw Error('出力に接続できません。');const s=await r.json();if(!$('apiAccepting').disabled)$('apiAccepting').checked=!!s.accepting;const labels={closed:'未接続',starting:'音声の準備中',idle:s.accepting?'発話の受付中':'発話の受付はオフ',synthesizing:'音声を生成中',speaking:'発話中',stopping:'発話を停止中',error:'発話エラー'};$('apiState').textContent=labels[s.state]||s.state;}catch(e){$('apiState').textContent=e.message;}finally{refreshing=false;}}
+ async function refresh(){if(disposed||refreshing)return;refreshing=true;try{const r=await fetch(base);if(!r.ok)throw Error('出力に接続できません。');const s=await r.json();onStatus(s);if(!$('apiAccepting').disabled)$('apiAccepting').checked=!!s.accepting;const labels={closed:'未接続',starting:'音声の準備中',idle:s.accepting?'発話の受付中':'発話の受付はオフ',synthesizing:'音声を生成中',speaking:'発話中',stopping:'発話を停止中',error:'発話エラー'};$('apiState').textContent=labels[s.state]||s.state;}catch(e){$('apiState').textContent=e.message;}finally{refreshing=false;}}
  $('apiAccepting').onchange=async()=>{const control=$('apiAccepting'),wanted=control.checked;control.disabled=true;try{const r=await fetch(base+'/reception',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({accepting:wanted})});if(!r.ok)throw Error('発話受付を変更できませんでした。');}catch(e){control.checked=!wanted;say(e.message,true);}finally{control.disabled=false;void refresh();}};
  void refresh();const timer=setInterval(refresh,2000);
  return {get active(){return mic.active||camera.active;},get cameraPose(){return camera.pose;},get microphoneActive(){return mic.active;},get mouth(){return mic.level;},
-  connection(value){online=value;if(!value){if(mic.active)mic.stop();if(camera.active)camera.stop();}micButtons();$('cameraStart').disabled=!value||camera.active;},
-  close(){disposed=true;permissionRequest?.abort();permissionRequest=null;clearInterval(timer);mic.stop();camera.stop();window.removeEventListener('keydown',onKey);navigator.mediaDevices?.removeEventListener('devicechange',refreshDevices);}
+  connection(value){online=value;$('inputMode').disabled=!value||switcher.busy;if(!value){if(mic.active)mic.stop();if(camera.active)camera.stop();}micButtons();$('cameraStart').disabled=!value||camera.active;},
+  close(){disposed=true;permissionRequest?.abort();permissionRequest=null;clearInterval(timer);mic.stop();camera.stop();navigator.mediaDevices?.removeEventListener('devicechange',refreshDevices);}
  };
 }

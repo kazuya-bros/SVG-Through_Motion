@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {normalizeLid,lidProfile,closedLashArtwork} from '../web/eyelid-controls.js';
+import {normalizeLid,lidProfile,closedLashArtwork,generatedLash} from '../web/eyelid-controls.js';
 import {normalizeStrands,blendStrands} from '../web/hair-strands.js';
 import {segmentOffset,mesh,triangleMatrix,rigPose,normalizeRig} from '../web/rig.js';
 const xs=Array.from({length:20},(_,i)=>i*3),path='M '+[...xs.map(x=>`${x} 20`),...xs.toReversed().map(x=>`${x} 25`)].join(' L ')+' Z M 20 24 L 22 33 L 24 24 Z';
@@ -12,6 +12,31 @@ test('closed-lash changes are reversible and do not mutate original artwork',()=
  assert.notEqual(result,part.closedSvgText);assert.equal(p.closedSvgText,part.closedSvgText);
  assert.ok(!result.includes('NaN'));assert.equal(normalizeLid({thickness:100}).thickness,2);
  assert.equal(lidProfile('<svg><path d="M 0 0 C 1 2 3 4 5 6Z"/></svg>'),null);
+});
+
+test('generated lash color and amount preserve source, reject invalid colors and protect PSD donors',()=>{
+ const render=values=>closedLashArtwork({...part,lidAdjust:values});
+ assert.equal(generatedLash(part),true);
+ assert.equal(lidProfile(render({lashAmount:0})).groups.length,1);
+ assert.equal(lidProfile(render({lashAmount:1})).groups.length,2);
+ assert.equal(lidProfile(render({lashAmount:2})).groups.length,3);
+ assert.match(render({color:'#60413b'}),/fill="#60413b"/);
+ assert.equal(normalizeLid({color:'url(https://invalid)',lashAmount:100}).color,null);
+ assert.equal(normalizeLid({lashAmount:100}).lashAmount,2);
+ assert.equal(generatedLash({...part,closedSource:'psd'}),false);
+ const donor=closedLashArtwork({...part,closedSource:'psd',lidAdjust:{color:'#ffffff',lashAmount:0}});
+ assert.match(donor,/fill="#231412"/);assert.equal(lidProfile(donor).groups.length,2);
+ assert.equal(render({color:'#60413b'}),render(JSON.parse(JSON.stringify({color:'#60413b'}))));
+ assert.match(part.closedSvgText,/fill="#231412"/);
+});
+
+test('explicit lash count spans zero to sixteen while preserving legacy shapes',()=>{
+ for(const count of [0,1,2,8,16]){
+  const v=normalizeLid({lashCount:count}),svg=closedLashArtwork({...part,lidAdjust:v});
+  assert.equal(lidProfile(svg).groups.length,count+1);assert.ok(!svg.includes('NaN'));
+  assert.equal(normalizeLid(JSON.parse(JSON.stringify(v))).lashCount,count);
+ }
+ assert.equal(normalizeLid({lashCount:100}).lashCount,16);assert.equal(normalizeLid({}).lashCount,null);
 });
 test('strand geometry is bounded and blends continuously between independently phased locks',()=>{
  const p={width:1024,height:1024};const list=normalizeStrands([{rootX:300,rootY:80,tipX:350,tipY:350,width:160,gain:1,delay:0},{rootX:600,rootY:80,tipX:620,tipY:330,width:160,gain:.8,delay:1}],p);

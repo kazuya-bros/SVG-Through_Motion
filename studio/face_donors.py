@@ -4,6 +4,7 @@ from xml.etree import ElementTree as ET
 from PIL import Image
 from psd_tools import PSDImage
 from .convert import MAX_PIXELS, clean_alpha, role_for, trace_part, tag
+from .psd_visibility import require_visible_if_present
 
 DONOR_KEYS = ('eyes_closed', 'mouth_closed', 'a', 'i', 'u', 'e', 'o')
 LABELS = dict(zip(DONOR_KEYS, ('閉じ目', '閉じ口', 'あ', 'い', 'う', 'え', 'お')))
@@ -24,6 +25,7 @@ def read_donors(sources, size, alpha=12, cleanup=False):
         roles = ('lash-r', 'lash-l') if key == 'eyes_closed' else ('mouth',)
         selected = {}
         for role in roles:
+            require_visible_if_present(leaves, lambda layer: role_for(layer.name) == role, f'{LABELS[key]}の差分PSD')
             canvas = Image.new('RGBA', size)
             names = []
             for layer in leaves:
@@ -62,7 +64,7 @@ def attach_donors(project, donors, dest, preset, progress=lambda *_: None):
             if not part:
                 raise ValueError(f'{LABELS[key]}: ベースに {role} パーツがありません')
             pid = f"donor-{key}-{role}"
-            text, paths = trace_part(entry['image'], dest / 'work', pid, preset)
+            text, paths = trace_part(entry['image'], dest / 'work', pid, preset, role)
             svg = registered_svg(text, entry['bounds'], part)
             entry['image'].save(dest / 'originals' / f'{pid}.png')
             metadata[key]['parts'][role] = dict(bounds=entry['bounds'], layers=entry['layers'], svg=f'parts/{pid}.svg', paths=paths)

@@ -2,8 +2,8 @@ import {restrainedDefaults} from './pachipaku-motion.js';
 // Reset motion only: keep the user's artwork, mouth tuning and output appearance.
 export function naturalMotionSettings(current={}){
  return {...current,...restrainedDefaults,duration:4,rigEnabled:true,independentHair:true,
-  blink:true,talking:false,singleBounce:false,bounceHeight:28,tailSwing:8,tailCycles:1,hair:0,chest:0,ears:0,
-  headPitch:0,pitchSway:0,frontHairMethod:'spring',backHairMethod:'spring',frontHairCycles:1,backHairCycles:1,
+  blink:true,talking:true,singleBounce:false,bounceHeight:28,tailSwing:8,tailCycles:1,hair:0,chest:0,ears:0,
+  headIdle:true,headYawOffset:0,headRollOffset:0,headPitch:0,pitchSway:0,frontHairMethod:'spring',backHairMethod:'spring',frontHairCycles:1,backHairCycles:1,
   irisX:0,irisScale:0,irisCycles:1,irisGaze:'natural',earPattern:'natural',earCycles:1};
 }
 

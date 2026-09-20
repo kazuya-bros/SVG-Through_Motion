@@ -6,7 +6,8 @@ depth-based X/Y parallax, restrained Z rotation, and mouth-driven chin drop in
 (`deform`, revision `7450341934a8ff77bf05b90d9f708786e3eb3996`). Copyright (c) 2026 hakoniwa,
 MIT; full license is retained in `licenses/Anime2.5DRig-MIT.txt`.
 Local changes use a face-only spatial falloff for merged face/torso assets,
-independent hair/accessory groups, shared eye parallax to retain lid alignment,
+independent hair/accessory sway combined with common head orientation,
+separate eyebrow height and tilt, shared eye parallax to retain lid alignment,
 a jaw falloff before the neck, deterministic poses, and a lightweight SVG
 displacement filter rather than copying the upstream WebGL runtime or assets.
 
@@ -32,3 +33,24 @@ MIT License。元実装のレイヤー順・有効状態・不透明度・追加
 Python/PillowとHTTP APIに移植し、版管理・所属・Depth調整・SVG受け渡しを追加しています。
 画像の拡縮は全体中心基準からパーツ原点基準へ変更しています。
 PachiPakuGenのソース・モデル全体を同梱する変更ではありません。
+
+# RIFEからSVG中間形状への試作（2026-09-17）
+
+`studio/rife_keyframes.py` のモデル入力規約（RGB、64px単位のゼロpad、
+`img0` / `img1` / `timestep`、元寸法へのcrop）はPachiPakuGenの
+`src-tauri/src/inference/rife.rs`（MIT、Copyright (c) 2026 kazuya_bros）を参考にしています。
+既存のPachiPakuGenにあるPractical-RIFE v4.9.2 ONNXを読み取り専用で利用します。
+SHA-256: `0f9f5d969d5221db40a30cc1c4ca9e66d34a408d8bdf146256121ed0304a25a6`。
+モデル・上流実装は [hzwer/Practical-RIFE](https://github.com/hzwer/Practical-RIFE)、
+MIT、Copyright (c) 2021 hzwer。使用モデルの上流revisionは
+`17d8c7a1005b37f4c97bfee04e316aaec7fdc536`。モデルは本試作HTMLに同梱していません。
+輪郭フィットと単調性の制約はSVG-Through側の試作処理で、RIFEの機能ではありません。
+
+2026-09-17: デスクトップ版の目・口用オフライン中間形状生成に、上記の監査済みモデルを同梱しました。
+モデルのライセンスは `licenses/Practical-RIFE-MIT.txt`。実行にはONNX Runtime 1.23.2（MIT）を使用し、配布ZIPに依存パッケージのライセンスを含めます。
+入力画像の局所切り出し、輪郭からの変形グリッド推定、早閉じ補正、反転・戻りの抑制は本製品独自の後処理です。
+
+8枚SVG再生の透過処理では、監査済みRIFEの最終フロー・混合マスクをアルファにも適用するノードをメモリ上で追加します。学習済み重みとRGB出力は変更しません。
+`studio/_onnx_schema.py` は ONNX 1.18.0 の生成済み `onnx/onnx_ml_pb2.py` の無改変コピーです。
+Copyright (c) ONNX Project Contributors、Apache License 2.0。
+全文は `licenses/ONNX-Apache-2.0.txt`。完全なONNXパッケージは配布しません。

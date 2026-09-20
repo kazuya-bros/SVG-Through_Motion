@@ -1,4 +1,4 @@
-import {lidDefaults,normalizeLid,lidProfile} from './eyelid-controls.js';
+import {lidDefaults,normalizeLid,lidProfile,generatedLash,lashColor} from './eyelid-controls.js';
 import {installEyeWorkbench} from './eye-workbench.js';
 import {eyeCapabilities} from './shape-capabilities.js';
 const $=id=>document.getElementById(id);
@@ -14,9 +14,27 @@ export function installRigEditor(api){
  for(const note of eye.querySelectorAll('p.tiny'))note.hidden=true;
 
  const lash=()=>api.project()?.parts.find(p=>p.role==='lash-'+$('lidSide').value);
+ const styles=document.createElement('section');styles.id='lashStyleControls';styles.hidden=true;
+ styles.innerHTML='<label class="slider-label">睫毛の本数<output id="lashAmountOut">2本</output><input id="lashAmount" type="range" min="0" max="16" step="1" value="2"/><span class="slider-ends"><span>0本</span><span>16本</span></span></label><label>睫毛の色<select id="lashColorChoice"><option value="source">元の色</option><option value="#60413b">やわらかい茶</option><option value="#403b42">グレー寄りの黒</option><option value="custom">色を選ぶ</option></select></label><label id="lashCustomColorLabel" hidden>好みの色<input id="lashColor" type="color" value="#3b2929"/></label>';
+ eye.append(styles);
  const direct=installEyeWorkbench({project:api.project,part:lash,changed:p=>api.updateEye(p),refresh:refreshEye,select(side){$('lidSide').value=side;$('lidSide').dispatchEvent(new Event('change'));},history(h){$('eyeUndo').disabled=!h.canUndo;$('eyeRedo').disabled=!h.canRedo;}});
+ function refreshLashStyle(){
+  const p=lash(),v=normalizeLid(p?.lidAdjust);styles.hidden=!generatedLash(p);
+  const count=v.lashCount??Math.round((lidProfile(p?.closedSvgText)?.groups.slice(1).filter(a=>a.length===6).length||0)*v.lashAmount);
+  $('lashAmount').value=count;$('lashAmountOut').value=count+'本';
+  $('lashAmount').style.setProperty('--range-progress',`${count/16*100}%`);
+  $('lashColorChoice').value=!v.color?'source':['#60413b','#403b42'].includes(v.color)?v.color:'custom';
+  $('lashColor').value=lashColor(p);$('lashCustomColorLabel').hidden=$('lashColorChoice').value!=='custom';
+ }
+ function changeStyle(values,commit=true){const p=lash();if(!generatedLash(p))return;const before=normalizeLid(p.lidAdjust);p.lidAdjust=normalizeLid({...before,...values});if(commit)direct.commit(before);api.updateEye(p);refreshEye();direct.refresh();}
+ $('lashColorChoice').onchange=()=>{const choice=$('lashColorChoice').value;if(choice==='custom'){$('lashCustomColorLabel').hidden=false;return;}changeStyle({color:choice==='source'?null:choice});};
+ for(const [id,key] of [['lashAmount','lashCount'],['lashColor','color']]){
+  const input=$(id);let before;
+  input.oninput=()=>{before??=normalizeLid(lash()?.lidAdjust);changeStyle({[key]:key==='color'?input.value:+input.value},false);};
+  const commit=()=>{if(before){direct.commit(before);before=null;}};input.onchange=commit;input.onblur=commit;
+ }
  $('eyeUndo').onclick=()=>direct.undo();$('eyeRedo').onclick=()=>direct.undo(true);
- function refreshEye(){const p=lash(),v=normalizeLid(p?.lidAdjust),caps=eyeCapabilities(p);for(const [k] of fields){const supported=k in caps?caps[k]:caps.transform;$('lid-'+k).value=v[k];$('lid-'+k).disabled=!supported;$('lid-'+k).closest('label').hidden=!supported;}if($('lid-thicknessOut'))$('lid-thicknessOut').value=Math.round(v.thickness*100)+'%';$('lidHint').textContent=!p?.closedSvgText?'閉じ目の差分がある素材を読み込んでください。':lidProfile(p.closedSvgText)?'元のまつ毛の塗り形状を調整します。':'追加した差分は位置・傾き・幅・太さを調整できます。';}
+ function refreshEye(){const p=lash(),v=normalizeLid(p?.lidAdjust),caps=eyeCapabilities(p);for(const [k] of fields){const supported=k in caps?caps[k]:caps.transform;$('lid-'+k).value=v[k];$('lid-'+k).disabled=!supported;$('lid-'+k).closest('label').hidden=!supported;}if($('lid-thicknessOut'))$('lid-thicknessOut').value=Math.round(v.thickness*100)+'%';$('lidHint').textContent=!p?.closedSvgText?'閉じ目の差分がある素材を読み込んでください。':lidProfile(p.closedSvgText)?'元のまつ毛の塗り形状を調整します。':'追加した差分は位置・傾き・幅・太さを調整できます。';refreshLashStyle();}
  for(const [k] of fields){let before;const input=$('lid-'+k);input.onfocus=()=>before=normalizeLid(lash()?.lidAdjust);input.onblur=()=>{if(before)direct.commit(before);before=null;};input.oninput=()=>{const p=lash();if(!p||input.value==='')return;before??=normalizeLid(p.lidAdjust);p.lidAdjust=normalizeLid({...lidDefaults,...p.lidAdjust,[k]:+input.value});api.updateEye(p);direct.refresh();};if(k==='thickness')input.onchange=()=>input.onblur();}
  $('lidSide').onchange=()=>{refreshEye();direct.refresh();};
  $('lidReset').onclick=()=>{const p=lash();if(!p)return;const before=normalizeLid(p.lidAdjust);delete p.lidAdjust;direct.commit(before);refreshEye();api.updateEye(p);};

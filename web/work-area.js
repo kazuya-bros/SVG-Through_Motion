@@ -9,15 +9,15 @@ export function zoomAt(view,factor,point={x:0,y:0}){
 export function installWorkArea(api){
  const stage=document.getElementById('stage'),art=document.getElementById('artboard');let view={scale:1,x:0,y:0},drag=null;
  function apply(){const transform=`translate(${view.x}px,${view.y}px) scale(${view.scale})`;art.style.transform=transform;document.getElementById('originalImage').style.transform=transform;document.getElementById('zoomValue').textContent=Math.round(view.scale*100)+'%';art.dispatchEvent(new Event('workviewchange'));}
- const local=e=>{const r=stage.getBoundingClientRect();return {x:e.clientX-r.left-r.width/2,y:e.clientY-r.top-r.height/2};};
+ const local=e=>{const r=(e.target.closest('.preview-viewport')||stage).getBoundingClientRect();return {x:e.clientX-r.left-r.width/2,y:e.clientY-r.top-r.height/2};};
  function zoom(factor,point){view=zoomAt(view,factor,point);apply();}
  stage.addEventListener('wheel',e=>{if(!api.enabled()||e.target.closest('#mouthWorkbench'))return;e.preventDefault();zoom(Math.exp(-clamp(e.deltaY*(e.deltaMode===1?16:1),-300,300)*.002),local(e));},{passive:false});
- stage.addEventListener('pointerdown',e=>{if(!api.enabled()||e.target.closest('#pivotPicker,#mouthWorkbench,[data-handle],button,input,select')||e.button!==0)return;
+ stage.addEventListener('pointerdown',e=>{if(!api.enabled()||e.target.closest('#pivotPicker,#mouthWorkbench,[data-handle],button,input,select')||!([0,1].includes(e.button)))return;
   drag={id:e.pointerId,x:e.clientX,y:e.clientY,view:{...view}};stage.classList.add('panning');stage.setPointerCapture(e.pointerId);e.preventDefault();});
  stage.addEventListener('pointermove',e=>{if(!drag||e.pointerId!==drag.id)return;view={...view,x:drag.view.x+e.clientX-drag.x,y:drag.view.y+e.clientY-drag.y};apply();});
  const end=()=>{drag=null;stage.classList.remove('panning');};
  stage.addEventListener('pointerup',end);stage.addEventListener('pointercancel',end);stage.addEventListener('lostpointercapture',end);
- return {zoom,apply,focus(project,point,scale=2){
+ return {zoom,apply,snapshot(){return {scale:view.scale,x:view.x/Math.max(1,stage.clientWidth),y:view.y/Math.max(1,stage.clientHeight)};},restore(value){view={scale:clamp(value.scale,.25,8),x:clamp(value.x,-4,4)*stage.clientWidth,y:clamp(value.y,-4,4)*stage.clientHeight};apply();},focus(project,point,scale=2){
   const fit=Math.min((art.clientWidth-24)/project.width,(art.clientHeight-52)/project.height);
   view={scale,x:-(point.x-project.width/2)*fit*scale,y:-(point.y-project.height/2)*fit*scale};apply();
  },reset(){view={scale:1,x:0,y:0};apply();}};

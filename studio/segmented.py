@@ -6,9 +6,14 @@ from scipy import ndimage
 from .eye_plate import psd_face_artwork
 
 
+def is_eyewear(name):
+    n=name.lower().replace('_','-').strip()
+    return bool(re.search(r'(^|[- ])eyewear($|[- ])', n) or n in ('眼鏡', 'メガネ', 'めがね', 'サングラス'))
+
+
 def is_head_accessory(name):
     n=name.lower().replace('_','-').strip()
-    return bool(re.search(r'(^|[- ])headwear($|[- ])',n) or any(v in n for v in ('頭飾り','獣耳','けもみみ','帽子')))
+    return bool(is_eyewear(name) or re.search(r'(^|[- ])headwear($|[- ])',n) or any(v in n for v in ('頭飾り','獣耳','けもみみ','帽子')))
 
 
 def accessory_image(image):
@@ -36,7 +41,7 @@ def motion_image(image):
 
 def motion_group(name):
     n=name.lower().replace('_','-')
-    for key in ('bottomwear','neckwear','earwear','wings'):
+    for key in ('bottomwear','legwear','footwear','neckwear','earwear','wings'):
         if re.fullmatch(key+r'(?:[- ][lr])?',n.strip()):return key
     if re.search(r'(^|[- ])tail($|[- ])|尻尾|しっぽ',n):return 'tail'
     if re.fullmatch(r'ears?[- ]r|右耳',n):return 'human-ear-r'
@@ -53,13 +58,14 @@ def split_motion_layers(plate, leaves, source_options=None, prefer_psd=True):
     h,w=plate.shape[:2]
     leaves=list(leaves)
     face_art=psd_face_artwork(leaves,(w,h)) if prefer_psd else None
-    extra_names={'bottomwear':'服の裾（bottomwear）','neckwear':'リボン・ネクタイ（neckwear）','earwear':'イヤリング（earwear）','wings':'翼（wings）'}
+    extra_names={'bottomwear':'服の裾（bottomwear）','legwear':'脚・脚の衣装（legwear）','footwear':'靴（footwear）','neckwear':'リボン・ネクタイ（neckwear）','earwear':'イヤリング（earwear）','wings':'翼（wings）'}
     groups=['core','back','arm-r','arm-l','front','human-ear-r','human-ear-l','tail',*extra_names]
     owner=np.zeros((h,w),np.uint8)
     backing={g:Image.new('RGBA',(w,h)) for g in groups}
     neck=Image.new('RGBA',(w,h))
     accessory_names={}
-    for layer in leaves:
+    positions={}
+    for position,layer in enumerate(leaves):
         if not layer.is_visible(): continue
         im=layer.composite(force=True)
         if im is None: continue
@@ -74,7 +80,10 @@ def split_motion_layers(plate, leaves, source_options=None, prefer_psd=True):
             if not canvas.getchannel('A').getbbox():continue
             g='accessory-'+str(len(accessory_names));groups.append(g);backing[g]=Image.new('RGBA',(w,h));accessory_names[g]=layer.name
         backing[g].alpha_composite(canvas)
-        owner[np.array(canvas)[:,:,3]>(0 if accessory else 127)]=groups.index(g)
+        positions[g]=position
+        # Isolated garments retain their PSD alpha. Even their translucent edges
+        # must own the source pixels, or those colors get baked into the torso.
+        owner[np.array(canvas)[:,:,3]>(0 if accessory or (prefer_psd and g in extra_names) else 127)]=groups.index(g)
     if prefer_psd:
         # A single earwear class may contain both earrings. Give the two sides
         # their own attachment rather than rotating the pair about the face.
@@ -85,6 +94,7 @@ def split_motion_layers(plate, leaves, source_options=None, prefer_psd=True):
             for side,mask in [('l',np.arange(w)<middle),('r',np.arange(w)>=middle)]:
                 key='earwear-'+side;extra_names[key]=('左' if side=='l' else '右')+'のイヤリング（earwear）'
                 a=e.copy();a[:,~mask,3]=0;groups.append(key);backing[key]=Image.fromarray(a)
+                positions[key]=positions['earwear']
                 owner[(owner==groups.index('earwear')) & mask[None,:]]=groups.index(key)
             backing['earwear']=Image.new('RGBA',(w,h))
     solid=plate[:,:,3]>0
@@ -104,7 +114,7 @@ def split_motion_layers(plate, leaves, source_options=None, prefer_psd=True):
             # gaps. They are not torso artwork simply because no PSD owns them.
             visible &= np.array(backing[g])[:,:,3]>127
         if not accessory:a[visible]=plate[visible]
-        if accessory:names[g]='PSDの頭飾り（'+accessory_names[g]+'）'
+        if accessory:names[g]=('PSDの眼鏡（' if is_eyewear(accessory_names[g]) else 'PSDの頭飾り（')+accessory_names[g]+'）'
         human_ear=g.startswith('human-ear-')
         if human_ear:names[g]='人間の'+('右' if g.endswith('-r') else '左')+'耳'
         if prefer_psd and psd_motion:
@@ -161,12 +171,15 @@ def split_motion_layers(plate, leaves, source_options=None, prefer_psd=True):
     if prefer_psd:
         # Place each extra surface relative to the torso using actual PSD
         # overlap ownership; a scarf can be tucked under or laid over clothes.
-        for g in extra_names:
+        below=[];above=[]
+        for g in sorted(extra_names,key=lambda key:positions.get(key,-1)):
             if g not in layers:continue
             overlap=(np.array(backing[g])[:,:,3]>127)&(np.array(backing['core'])[:,:,3]>127)
             under=((owner==groups.index('core'))&overlap).sum()>((owner==groups.index(g))&overlap).sum()
-            at=order.index('core') if under or g=='wings' else order.index('core')+1
-            order.insert(at,g)
+            (below if under or g=='wings' else above).append(g)
+        # Preserve PSD order among garments too (e.g. shorts over legwear).
+        at=order.index('core')
+        order[at:at+1]=below+['core']+above
     leading=[layers[g] for g in order if g in layers]
     if face_art is not None:
         name='Face（顔の下地）'

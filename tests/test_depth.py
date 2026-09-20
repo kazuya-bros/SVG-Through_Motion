@@ -6,7 +6,7 @@ from unittest.mock import patch
 import numpy as np
 from PIL import Image
 from psd_tools import PSDImage
-from psd_tools.api.layers import PixelLayer
+from psd_tools.api.layers import PixelLayer, Group
 from fastapi.testclient import TestClient
 from studio.depth import read_depth, attach_depth
 from studio import server, assist
@@ -49,6 +49,29 @@ class DepthTests(unittest.TestCase):
                 read_depth(self.depth(**kwargs), self.base)
         path=self.root/'color.psd';self.base.save(path)
         with self.assertRaisesRegex(ValueError,'グレースケール'):read_depth(path,self.base)
+
+    def test_hidden_face_explains_visibility_and_does_not_modify_psd(self):
+        path = self.depth()
+        self.base[0].visible = False
+        with self.assertRaisesRegex(ValueError, '通常PSD.*face.*非表示.*ON.*保存し直して'):
+            read_depth(path, self.base)
+        self.assertFalse(self.base[0].visible)
+        self.base[0].visible = True
+        depth = PSDImage.open(path); depth[0].visible = False; depth.save(path)
+        raw = path.read_bytes()
+        with self.assertRaisesRegex(ValueError, 'Depth PSD.*face.*非表示'):
+            read_depth(path, self.base)
+        self.assertEqual(path.read_bytes(), raw)
+
+    def test_hidden_parent_is_explained_even_when_face_itself_is_on(self):
+        base = PSDImage.new('RGBA', (128, 128))
+        group = Group.new(base, name='編集中')
+        face = PixelLayer.frompil(Image.new('RGBA', (64, 64), 'orange'), group, name='face', left=32, top=16)
+        group.visible = False
+        self.assertTrue(face.visible)
+        with self.assertRaisesRegex(ValueError, 'face.*非表示.*親グループ.*ON'):
+            read_depth(self.depth(), base)
+        self.assertFalse(group.visible)
 
     def test_multipart_keeps_depth_and_donors_separate_and_optional(self):
         uploads=self.root/'uploads';uploads.mkdir()

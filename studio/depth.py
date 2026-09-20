@@ -6,6 +6,7 @@ from PIL import Image
 from psd_tools import PSDImage
 from psd_tools.constants import ColorMode
 from scipy import ndimage
+from .psd_visibility import require_visible_if_present
 
 
 def layer_key(name):
@@ -31,6 +32,8 @@ def read_depth(path, base):
         lookup[key] = layer
     candidates = {'face': 'face', '顔': 'face', 'front hair': 'front', '前髪': 'front',
                   'back hair': 'back', '後ろ髪': 'back', 'headwear': 'headwear', '頭飾り': 'headwear'}
+    require_visible_if_present(list(base.descendants()), lambda layer: layer_key(layer.name) in ('face', '顔'), '通常PSD')
+    require_visible_if_present(layers, lambda layer: layer_key(layer.name) in ('face', '顔'), 'Depth PSD')
     parts = {}; field = None
     for layer in base.descendants():
         if layer.is_group() or not layer.is_visible():

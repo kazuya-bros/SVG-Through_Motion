@@ -1,6 +1,7 @@
 """Ephemeral, editor-independent avatar players. Speech is never replayed on reconnect."""
 import asyncio
 import json
+import hashlib
 import time
 import uuid
 from collections import OrderedDict
@@ -10,6 +11,7 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .control import valid_origin
+from . import runtime_effects, performance
 
 router = APIRouter(prefix='/api/runtime', tags=['Character output'])
 sessions = OrderedDict()
@@ -24,6 +26,7 @@ class Launch(BaseModel):
     tts: dict
     gain: float = Field(5, ge=1, le=20)
     accepting: bool = False
+    ai_enabled: bool = False
 
 
 class Speech(BaseModel):
@@ -46,6 +49,8 @@ class Session:
     def __init__(self, body):
         self.id = uuid.uuid4().hex
         self.project, self.tts, self.gain = body.project, body.tts, body.gain
+        self.character_id = hashlib.sha256(json.dumps(self.project,sort_keys=True,ensure_ascii=False).encode()).hexdigest()[:32]
+        self.characters = {self.character_id: self.project}
         self.player = None
         self.viewers = set()
         self.state = 'closed'
@@ -54,6 +59,14 @@ class Session:
         self.current = None
         self.pending = None
         self.requests = OrderedDict()
+        self.expression_requests = OrderedDict()
+        self.expression = None
+        self.effect_requests = OrderedDict()
+        self.effect = None
+        performance.initialize(self)
+        if body.ai_enabled:
+            self.stage['mode'] = 'ai'
+        self.voice_revision = 0
         self.revision = 0
         self.pose = None
         self.error = None
@@ -63,9 +76,21 @@ class Session:
         self.accepting = body.accepting
 
     def status(self):
+        performance.expire(self)
+        runtime_effects.expire(self)
         fresh = self.player is not None and time.time() - self.heartbeat < 8
-        return dict(session_id=self.id, connected=fresh, ready=fresh and self.ready,
+        for item in self.expression_requests.values():
+            if item['status'] == 'accepted' and time.time() - item['created'] > 10:
+                item.update(status='unknown', error='表情の適用確認が届きません。出力の状態を確認してください')
+        return dict(session_id=self.id, character_id=self.character_id, connected=fresh, ready=fresh and self.ready,
+                    stage=self.stage,
+                    effect=self.effect if fresh else None,
+                    expression=self.expression if fresh else None,
+                    expressions=[str(p.get('name') or f'表情 {i+1}')[:40] if isinstance(p, dict) else f'表情 {i+1}'
+                                 for i, p in enumerate(self.project.get('expressionPresets', []))][:12]
+                    if isinstance(self.project.get('expressionPresets'), list) else ['通常', '笑顔', '驚き', '困り顔', 'ウインク'],
                     accepting=self.accepting,
+                    voice_revision=self.voice_revision,
                     tts={k: v for k, v in self.tts.items() if k not in ('api_key', 'text')},
                     state=self.state if fresh else 'closed', revision=self.revision,
                     current=self.current if fresh else None, pending=self.pending if fresh else None,
@@ -94,6 +119,16 @@ class Session:
             self.requests[utterance['request_id']].update(status=state, error=error)
 
     async def disconnected(self):
+        performance.reset(self, 'unknown')
+        self.stage['mode'] = 'fixed'
+        for item in self.effect_requests.values():
+            if item['status'] in ('accepted', 'running'):
+                item.update(status='unknown', error='出力が切断され、演出の結果を確認できません')
+        self.effect = None
+        for item in self.expression_requests.values():
+            if item['status'] == 'accepted':
+                item.update(status='unknown', error='出力が切断され、適用結果を確認できません')
+        self.expression = None
         self.finish(self.current, 'interrupted', 'Player disconnected')
         self.finish(self.pending, 'failed', 'Player disconnected')
         self.current = self.pending = self.pose = None
@@ -118,26 +153,31 @@ def get(sid):
     return sessions[sid]
 
 
+def validated_tts(value):
+    from .server import TTSRequest, tts_base
+    if value.get('engine') == 'browser':
+        return dict(engine='browser', browser_voice=str(value.get('browser_voice', ''))[:500])
+    try:
+        label = str(value.get('label', ''))[:500]
+        config = TTSRequest(**value)
+        tts_base(config.base_url.removesuffix('/v1') if config.engine == 'irodori' else config.base_url)
+        result = config.model_dump()
+        result['api_key'] = config.api_key.get_secret_value()
+        result['label'] = label
+        return result
+    except ValueError:
+        raise HTTPException(422, '音声エンジンの設定を確認してください')
+
+
 @router.post('/sessions', status_code=201)
 async def launch(body: Launch):
     global active_session_id
-    from .server import TTSRequest, tts_base
     if not isinstance(body.project.get('parts'), list) or not body.project['parts']:
         raise HTTPException(422, 'キャラクターを読み込んでください')
-    if len(json.dumps(body.project)) > 50 * 1024**2:
-        raise HTTPException(413, '出力用の素材は50MB以下にしてください')
-    if body.tts.get('engine') == 'browser':
-        body.tts = dict(engine='browser', browser_voice=str(body.tts.get('browser_voice', ''))[:500])
-    else:
-        try:
-            label = str(body.tts.get('label', ''))[:500]
-            config = TTSRequest(**body.tts)
-            tts_base(config.base_url.removesuffix('/v1') if config.engine == 'irodori' else config.base_url)
-            body.tts = config.model_dump()
-            body.tts['api_key'] = config.api_key.get_secret_value()
-            body.tts['label'] = label
-        except ValueError:
-            raise HTTPException(422, '音声エンジンの設定を確認してください')
+    from .limits import PROJECT_BYTES
+    if len(json.dumps(body.project, ensure_ascii=False).encode('utf-8')) > PROJECT_BYTES:
+        raise HTTPException(413, '出力用の素材は100MB以下にしてください')
+    body.tts = validated_tts(body.tts)
     # Bound retained snapshots; live players are never evicted.
     retired = []
     for sid, session in list(sessions.items()):
@@ -248,7 +288,38 @@ async def status(sid: str):
 async def snapshot(sid: str):
     s = get(sid)
     # Secrets stay on the server, never in projects, status, URLs or display clients.
-    return dict(project=s.project, engine=s.tts['engine'], browser_voice=s.tts.get('browser_voice', ''), gain=s.gain)
+    return dict(project=s.project, character_id=s.character_id, **voice_state(s))
+
+
+def voice_state(s):
+    return dict(engine=s.tts['engine'], browser_voice=s.tts.get('browser_voice', ''), gain=s.gain,
+                voice_revision=s.voice_revision, tts={k: v for k, v in s.tts.items() if k not in ('api_key', 'text')})
+
+
+class VoiceUpdate(BaseModel):
+    model_config = ConfigDict(extra='forbid', allow_inf_nan=False)
+    revision: int = Field(ge=0, strict=True)
+    tts: dict
+    gain: float = Field(5, ge=1, le=20)
+
+
+@router.put('/sessions/{sid}/voice')
+async def configure_voice(sid: str, body: VoiceUpdate):
+    s = get(sid)
+    tts = validated_tts(body.tts)
+    async with s.lock:
+        if body.revision != s.voice_revision:
+            raise HTTPException(409, '音声設定が更新されています。読み直してください')
+        if s.current or s.pending:
+            raise HTTPException(409, '発話が終わってから音声設定を変更してください')
+        s.tts, s.gain = tts, body.gain
+        s.voice_revision += 1
+        public = voice_state(s)
+        s.project.setdefault('voiceSettings', {})['ttsConfig'] = dict(selected=tts['engine'], engines={tts['engine']:public['tts']})
+        s.project.pop('broadcastVoiceError', None)
+        await s.changed()
+        await s.send(dict(type='voice', **public))
+        return public
 
 
 @router.post('/sessions/{sid}/close')
@@ -339,6 +410,56 @@ async def audio(sid: str, body: Synthesis):
     return await synthesize(TTSRequest(**{**s.tts, 'text': body.text}))
 
 
+class Expression(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    request_id: str = Field(min_length=1, max_length=80, pattern=r'^[\w-]+$')
+    index: int = Field(ge=0, le=11, strict=True)
+    strength: float = Field(default=1, ge=0, le=1)
+
+
+@router.post('/sessions/{sid}/expression', status_code=202)
+async def select_expression(sid: str, body: Expression):
+    s = get(sid)
+    async with s.lock:
+        existing = s.expression_requests.get(body.request_id)
+        if existing:
+            if existing['command'] != body.model_dump():
+                raise HTTPException(409, '同じrequest_idを別の表情操作に再利用できません')
+            s.status()
+            return existing
+        if not s.status()['connected']:
+            raise HTTPException(409, '出力ウィンドウが接続されていません')
+        if body.index >= len(s.status()['expressions']):
+            raise HTTPException(422, '指定した表情がありません')
+        item = dict(request_id=body.request_id, status='accepted', created=time.time(),
+                    command=body.model_dump(), result_url=f'/api/runtime/sessions/{sid}/expression/{body.request_id}')
+        s.expression_requests[body.request_id] = item
+        while len(s.expression_requests) > 100:
+            s.expression_requests.popitem(last=False)
+        try:
+            await s.send(dict(type='expression', action='select', index=body.index,
+                              strength=body.strength, request_id=body.request_id))
+        except (RuntimeError, asyncio.TimeoutError):
+            item.update(status='unknown', error='送信結果を確認できません。状態を確認してください')
+        return item
+
+
+@router.get('/sessions/{sid}/expression/{request_id}')
+async def expression_result(sid: str, request_id: str):
+    s = get(sid)
+    s.status()
+    if request_id not in s.expression_requests:
+        raise HTTPException(404, '表情操作の結果がありません（直近100件・再起動で消去）')
+    return s.expression_requests[request_id]
+
+
+def expression_state(value):
+    if (isinstance(value, dict) and type(value.get('index')) is int and 0 <= value['index'] <= 11
+            and type(value.get('strength')) in (int, float) and 0 <= value['strength'] <= 1):
+        return dict(index=value['index'], strength=value['strength'])
+    return None
+
+
 @router.websocket('/sessions/{sid}/socket/{role}')
 async def socket(ws: WebSocket, sid: str, role: str):
     if sid not in sessions or role not in ('player', 'display') or not valid_origin(ws):
@@ -372,11 +493,29 @@ async def socket(ws: WebSocket, sid: str, role: str):
                     break
                 s.heartbeat = time.time()
                 kind = msg.get('type')
+                current_expression = expression_state(msg.get('expression'))
+                if current_expression is not None:
+                    s.expression = current_expression
                 if s.current and time.time() > s.deadline:
                     s.error = '発話の応答が途絶えたため接続を終了しました'
                     await ws.close(code=1011, reason='Speech timed out')
                     break
-                if kind == 'ready':
+                if kind == 'character_result':
+                    from .runtime_characters import acknowledge
+                    acknowledge(s,msg)
+                elif kind == 'stage_result':
+                    await performance.acknowledge(s, msg)
+                elif kind == 'effect_result':
+                    if runtime_effects.acknowledge(s, msg):
+                        await s.changed()
+                elif kind == 'expression_result':
+                    item = s.expression_requests.get(msg.get('request_id'))
+                    if item and item['status'] in ('accepted', 'unknown'):
+                        matches = current_expression and all(current_expression[k] == item['command'][k] for k in ('index', 'strength'))
+                        item.update(status='completed' if matches and not msg.get('error') else 'failed',
+                                    result=current_expression, error=str(msg.get('error') or '表情が一致しません')[:500] if not matches or msg.get('error') else None)
+                        await s.changed()
+                elif kind == 'ready':
                     s.ready = msg.get('ready') is True
                     if not s.ready:
                         s.finish(s.current, 'interrupted', 'Audio is not ready')
@@ -386,7 +525,10 @@ async def socket(ws: WebSocket, sid: str, role: str):
                         s.state = 'idle' if s.ready else 'starting'
                     await s.changed()
                 elif kind == 'pose' and isinstance(msg.get('pose'), dict):
-                    s.pose = dict(type='pose', pose=msg['pose'], time=msg.get('time', 0))
+                    if msg.get('character_id',s.character_id)!=s.character_id:continue
+                    runtime_effects.update_cue(s, msg)
+                    caption = str(msg.get('caption', ''))[:2000] if s.state == 'speaking' else ''
+                    s.pose = dict(type='pose', character_id=s.character_id, pose=msg['pose'], time=msg.get('time', 0), effect=s.effect, caption=caption)
                     await s.broadcast(s.pose)
                 elif s.current and msg.get('id') == s.current['id']:
                     if kind in ('speaking', 'synthesizing') and s.state != 'stopping':
@@ -422,5 +564,5 @@ async def socket(ws: WebSocket, sid: str, role: str):
             s.viewers.discard(ws)
         try:
             await ws.close()
-        except RuntimeError:
+        except (RuntimeError,WebSocketDisconnect):
             pass

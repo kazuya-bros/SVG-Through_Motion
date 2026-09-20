@@ -1,3 +1,5 @@
+import {aiCorrectionUiVisible} from './ui-flags.js';
+
 export function installAssistEntry(){
   let generation=0;
   const box=document.createElement('section');box.className='control-card';box.id='assistEntry';
@@ -8,6 +10,7 @@ export function installAssistEntry(){
   <p class="tiny">目・口を整え、動きをつけるところまでAIに任せます。TTS・声の選択や出力の起動は自分で行います。</p><p class="tiny">元画像と対応PSDを登録し、依頼をCodexへ渡します。この画面を開いたまま進めてください。</p></div>
   <div data-handoff hidden><p role="status">素材登録済み。依頼をコピーしてCodexへ渡してください。</p><textarea readonly data-prompt></textarea><button type="button" data-copy>AIへの依頼をコピー</button></div>`;
   document.getElementById('finishMethodMount').append(box);
+  box.hidden=!aiCorrectionUiVisible;
   const enabled=()=>box.querySelector('[name=assistEntryMode]:checked').value==='ai';
   box.querySelectorAll('[name=assistEntryMode]').forEach(e=>e.onchange=()=>{box.querySelector('[data-ai-options]').hidden=!enabled();box.querySelector('[data-manual-hint]').hidden=enabled();document.getElementById('hybridImport').textContent=enabled()?'素材を登録してAIに渡す':'読み込んで編集を始める';});
   box.querySelector('[data-copy]').onclick=async()=>{await navigator.clipboard.writeText(box.querySelector('[data-prompt]').value);};

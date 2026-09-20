@@ -9,6 +9,20 @@ export function closedProfile(svg=''){
  if(points.length<3||points.some((p,i)=>!Number.isFinite(p.x+p.y)||(i&&p.x<=points[i-1].x)))return null;
  return {points,color,width,left:points[0].x,right:points.at(-1).x};
 }
+// Upgrade only untouched generated frowns. Hand-edited/custom/PSD donors keep
+// their saved shape, and already smiling donors are unchanged.
+export function smileGeneratedMouth(part,settings={}){
+ if(part.closedSource==='psd'||part.role!=='mouth'||part.mouthMode!=='source-open')return;
+ const t=settings.mouthTuning?.closed||{};
+ if(['x','y','angle','curve','left','right'].some(k=>Number.isFinite(t[k])&&t[k]!==0)||['width','height'].some(k=>Number.isFinite(t[k])&&t[k]!==1))return;
+ const profile=closedProfile(part.closedSvgText);if(!profile||profile.points.length!==21)return;
+ const a=profile.points[0],b=profile.points.at(-1),m=profile.points[Math.floor(profile.points.length/2)],u=(m.x-a.x)/(b.x-a.x);
+ if(m.y>=a.y+(b.y-a.y)*u)return;
+ const bend=Math.min(part.height*.16,(b.x-a.x)*.07),mid=(a.y+b.y)/2;
+ const points=profile.points.map(p=>{const u=(p.x-a.x)/(b.x-a.x);return {...p,y:mid+(b.y-a.y)*(u-.5)+bend*(4*u*(1-u)-.5)};});
+ const d=points.map((p,i)=>`${i?'L':'M'}${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' ');
+ part.closedSvgText=part.closedSvgText.replace(/\bd="[^"]+"/,`d="${d}"`);
+}
 export function closedPoints(profile,tuning){
  return profile.points.map(p=>{const u=(p.x-profile.left)/(profile.right-profile.left);
   return {x:p.x,y:p.y+tuning.left*(1-u)+tuning.right*u+tuning.curve*4*u*(1-u)};

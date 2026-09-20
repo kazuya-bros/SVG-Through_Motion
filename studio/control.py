@@ -5,6 +5,7 @@ No project files are modified by this broker.
 """
 import asyncio
 import json
+import re
 import time
 import uuid
 from collections import OrderedDict
@@ -16,10 +17,22 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 router = APIRouter(prefix='/api/control', tags=['AI control / OBS'])
 
 MOTION_RANGES = {'earCycles': (1,6), 'frontHairCycles': (1,4), 'backHairCycles': (1,4), 'irisX': (0,20), 'irisScale': (0,10), 'irisCycles': (1,4), 'duration': (1,30), 'sway': (0,12), 'breathe': (0,40), 'headPitch': (-1,1),
-                'pitchSway': (0,1), 'headYaw': (0,1), 'headTilt': (0,8), 'headNod': (0,6),
-                'bodyFollow': (0,1), 'frontHair': (0,40), 'backHair': (0,70), 'hairTip': (1,3),
+                'headYawOffset': (-1,1), 'headRollOffset': (-8,8), 'pitchSway': (0,1), 'headYaw': (0,1), 'headTilt': (0,8), 'headNod': (0,6),
+                'faceNeckBlend': (.15,.6), 'bodyFollow': (0,1), 'frontHair': (0,40), 'backHair': (0,70), 'hairTip': (1,3),
                 'tailSwing': (0,30), 'tailCycles': (1,4), 'armSwing': (0,10), 'hairBend': (0,30), 'springCycles': (1,4), 'springSoftness': (0,1),
+                'chestCenterX': (0,1), 'chestCenterY': (0,1), 'chestRadiusX': (.01,.5), 'chestRadiusY': (.01,.5),
                 'bounceHeight': (0,160), 'hair': (0,25), 'chest': (0,40), 'ears': (0,30)}
+
+
+def validate_motion_region(value):
+    import math
+    if value is None:return True
+    if not isinstance(value,dict) or set(value)-{'cx','cy','rx','ry','mask'}:return False
+    for k in ('cx','cy','rx','ry'):
+        v=value.get(k)
+        if isinstance(v,bool) or not isinstance(v,(int,float)) or not math.isfinite(v) or not (0.005 if k.startswith('r') else 0)<=v<=1:return False
+    mask=value.get('mask')
+    return ('mask' not in value) or isinstance(mask,list) and len(mask)==4096 and all(type(v) is int and 0<=v<=255 for v in mask)
 
 
 def validate_motion_settings(settings):
@@ -27,7 +40,9 @@ def validate_motion_settings(settings):
     if not isinstance(settings, dict) or not settings:
         raise ValueError('motion settings required')
     for key, value in settings.items():
-        if key in ('blink', 'talking', 'rigEnabled', 'independentHair', 'singleBounce'):
+        if key == 'chestMotionRegion':
+            valid=validate_motion_region(value)
+        elif key in ('blink', 'talking', 'rigEnabled', 'independentHair', 'faceCoordination', 'headIdle', 'singleBounce', 'chestRegionManual'):
             valid = isinstance(value, bool)
         elif key == 'irisGaze':
             valid = value in ('natural','sweep')
@@ -114,9 +129,106 @@ class AssistCommand(BaseModel):
         return self
 
 
+class RifeCommand(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    operation: Literal['inspect', 'generate', 'cancel']
+    target: Literal['all', 'eyes', 'mouth'] = 'all'
+    mode: Literal['grid', 'svg-frames'] = 'svg-frames'
+
+
+class MotionLinkAnchor(BaseModel):
+    model_config = ConfigDict(extra='forbid', allow_inf_nan=False)
+    x: float = Field(ge=0, le=20000)
+    y: float = Field(ge=0, le=20000)
+
+
+class MotionLinksCommand(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    operation: Literal['inspect', 'link', 'unlink']
+    source_id: str | None = Field(None, pattern=r'^p[0-9]{3}$')
+    part_ids: list[str] = Field(default_factory=list, max_length=100)
+    expected: dict[str, str | None] | None = None
+    expected_revision: str | None = Field(None, max_length=100000)
+    mode: Literal['rigid', 'attachment'] | None = None
+    anchor: MotionLinkAnchor | None = None
+
+    @model_validator(mode='after')
+    def valid_links(self):
+        if self.operation in ('link', 'unlink') and (not self.source_id or not self.part_ids):
+            raise ValueError('source_id and part_ids required')
+        if len(set(self.part_ids)) != len(self.part_ids) or any(not re.fullmatch(r'p[0-9]{3}', p) for p in self.part_ids):
+            raise ValueError('invalid part_ids')
+        if self.expected is not None and (set(self.expected) != set(self.part_ids) or any(v is not None and not re.fullmatch(r'p[0-9]{3}', v) for v in self.expected.values())):
+            raise ValueError('expected must describe every target')
+        return self
+
+
+class HeadFollowTuning(BaseModel):
+    model_config = ConfigDict(extra='forbid', allow_inf_nan=False)
+    amount: float = Field(ge=0,le=1)
+    depth: float = Field(ge=.5,le=1.4)
+
+class HeadMotionCommand(BaseModel):
+    model_config = ConfigDict(extra='forbid', allow_inf_nan=False)
+    operation: Literal['inspect','update','reset']
+    part_ids: list[str] = Field(default_factory=list,max_length=100)
+    tuning: HeadFollowTuning | None = None
+    enabled: bool | None = None
+    neck_blend: float | None = Field(None,ge=.15,le=.6)
+    expected_revision: str | None = Field(None,max_length=100000)
+
+    @model_validator(mode='after')
+    def valid_head(self):
+        if len(set(self.part_ids))!=len(self.part_ids) or any(not re.fullmatch(r'p[0-9]{3}',v) for v in self.part_ids):raise ValueError('invalid head part_ids')
+        if self.tuning and not self.part_ids:raise ValueError('tuning requires part_ids')
+        return self
+
+
+class LayerEditCommand(BaseModel):
+    model_config=ConfigDict(extra='forbid',allow_inf_nan=False)
+    operation: Literal['inspect','stroke','merge','target','pivot','secondary']
+    expected_revision: str | None = Field(None,pattern=r'^[a-f0-9]{64}$')
+    part_id: str | None = Field(None,pattern=r'^p[0-9]{3}$')
+    other_id: str | None = Field(None,pattern=r'^p[0-9]{3}$')
+    secondary: dict | None = None
+    name: str | None = Field(None,max_length=150)
+    kind: Literal['ear','tail','wing'] | None = None
+    target: str | None = Field(None,pattern=r'^(auto|both|none|p[0-9]{3})$')
+    mode: Literal['paint','erase'] | None = None
+    size: float | None = Field(None,ge=1,le=200)
+    color: str | None = Field(None,pattern=r'^#[a-fA-F0-9]{6}$')
+    points: list[tuple[float,float]] | None = Field(None,min_length=1,max_length=10000)
+    x: float | None = Field(None,ge=0,le=20000)
+    y: float | None = Field(None,ge=0,le=20000)
+
+    @model_validator(mode='after')
+    def valid_edit(self):
+        if self.operation!='inspect' and not self.expected_revision:raise ValueError('expected_revision required')
+        if self.target=='both' and self.kind!='ear':raise ValueError('both is only available for ears')
+        fields={'stroke':('part_id','mode','size','color','points'),'merge':('part_id','other_id'),'target':('kind','target'),'pivot':('part_id','x','y'),'secondary':('part_id','secondary')}.get(self.operation,())
+        if any(getattr(self,k) is None for k in fields):raise ValueError('operation fields required')
+        if self.secondary is not None:
+            import math
+            for k,v in self.secondary.items():
+                if k=='enabled':valid=type(v) is bool
+                elif k=='direction':valid=v in ('horizontal','vertical','diag-down','diag-up')
+                elif k=='region':valid=validate_motion_region(v)
+                elif k in ('amount','cycles','range'):
+                    lo,hi={'amount':(0,100),'cycles':(1,4),'range':(10,100)}[k]
+                    valid=not isinstance(v,bool) and isinstance(v,(int,float)) and math.isfinite(v) and lo<=v<=hi and (k!='cycles' or int(v)==v)
+                else:valid=False
+                if not valid:raise ValueError('invalid secondary motion setting')
+
+        return self
+
+
 class Command(BaseModel):
     model_config = ConfigDict(extra='forbid', allow_inf_nan=False)
-    action: Literal['play', 'pause', 'seek', 'pose', 'settings', 'speak', 'stop', 'load', 'export', 'assist']
+    action: Literal['play', 'pause', 'seek', 'pose', 'settings', 'speak', 'stop', 'load', 'export', 'assist', 'rife', 'motion_links', 'head_motion', 'layer_edit']
+    layer_edit: LayerEditCommand | None = None
+    motion_links: MotionLinksCommand | None = None
+    head_motion: HeadMotionCommand | None = None
+    rife: RifeCommand | None = None
     assist: AssistCommand | None = None
     time: float | None = Field(None, ge=0, le=30)
     mouth: float | None = Field(None, ge=0, le=1)
@@ -137,17 +249,21 @@ class Command(BaseModel):
 
     @model_validator(mode='after')
     def validate_action(self):
-        required = {'seek': 'time', 'settings': 'settings', 'speak': 'text', 'load': 'project_id', 'assist': 'assist'}
+        required = {'seek': 'time', 'settings': 'settings', 'speak': 'text', 'load': 'project_id', 'assist': 'assist', 'rife': 'rife', 'motion_links': 'motion_links', 'head_motion':'head_motion','layer_edit':'layer_edit'}
         if self.action in required and getattr(self, required[self.action]) is None:
             raise ValueError(f'{self.action} requires {required[self.action]}')
         if self.text is not None and not self.text.strip():
             raise ValueError('text must not be blank')
         if self.settings is not None:
-            ranges = {**MOTION_RANGES, 'eyeThroughHairStrength': (0, 1)}
+            ranges = {**MOTION_RANGES, 'eyeThroughHairStrength': (0, 1), 'rifeStrength': (0, 1)}
             for key, value in self.settings.items():
-                if key in ('blink', 'talking', 'vowels', 'rigEnabled', 'eyeThroughHair', 'independentHair', 'singleBounce'):
+                if key == 'chestMotionRegion':
+                    if not validate_motion_region(value):raise ValueError('Invalid chest motion region')
+                elif key in ('blink', 'talking', 'vowels', 'rigEnabled', 'eyeThroughHair', 'independentHair', 'faceCoordination', 'headIdle', 'singleBounce', 'chestRegionManual', 'rifeEyes', 'rifeMouth'):
                     if not isinstance(value, bool):
                         raise ValueError(f'{key} must be boolean')
+                elif key in ('rifeEyesMode', 'rifeMouthMode'):
+                    if value not in (('grid','svg-frames','stable','svg-frames-raw') if key == 'rifeMouthMode' else ('grid','svg-frames')):raise ValueError('Unsupported RIFE mode')
                 elif key == 'irisGaze':
                     if value not in ('natural','sweep'):raise ValueError(f'Unsupported gaze: {value}')
                 elif key == 'earPattern':
@@ -276,7 +392,8 @@ async def socket(ws: WebSocket, role: str):
             raw = await ws.receive_text()
             if role != 'editor':
                 continue  # OBS sockets cannot issue commands or change state.
-            if len(raw) > 50 * 1024**2:
+            from .limits import PROJECT_BYTES
+            if len(raw.encode('utf-8')) > PROJECT_BYTES:
                 await ws.close(code=1009)
                 break
             msg = json.loads(raw)

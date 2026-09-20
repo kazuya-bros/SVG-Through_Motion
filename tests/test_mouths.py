@@ -15,6 +15,7 @@ class MouthTests(unittest.TestCase):
         self.assertLess(max(abs(s) for s in slopes),.6)
         self.assertLess(max(abs(b-a) for a,b in zip(slopes,slopes[1:])),.15)
         self.assertGreater(points[0][1],points[-1][1])
+        self.assertGreater(points[len(points)//2][1],(points[0][1]+points[-1][1])/2)
 
     def test_closed_line_retains_source_ink_color_and_nonzero_thickness(self):
         im=Image.new('RGBA',(80,50))

@@ -1,12 +1,35 @@
+import {coordinatedHeadPoint} from './head-coordination.js';
 // Adapted from Anime2.5DRig lib/app.js deform(), MIT, hakoniwa (2026).
 // Revision 7450341934a8ff77bf05b90d9f708786e3eb3996. See THIRD_PARTY_NOTICES.md.
-// Local adaptation: face-only weights for merged face/torso artwork; hair stays
-// on its independent motion. Jaw opening is bounded and fades before the neck.
+// Local adaptation: local face weights protect merged torso artwork. Separate
+// head layers share neck-pivot motion with depth, then retain their own sway.
 import {secondaryKind} from './secondary-motion.js';
 import {depthAmount,depthFaceOffset} from './depth-motion.js';
 const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,Number.isFinite(+v)?+v:a));
 const smooth=v=>{v=clamp(v);return v*v*(3-2*v);};
+export function headAttachment(part){
+ if(['front','back'].includes(part.deformGroup))return part.deformGroup;
+ if(part.role==='hair')return 'back';
+ if(part.earMotion===true||['ear-l','ear-r','glasses'].includes(part.role)||['ornament','pendant'].includes(secondaryKind(part)))return 'accessory';
+ if(part.independentAccessory&&/headwear|eyewear|髪飾り|頭飾り|眼鏡/i.test(part.sourceLayerName||part.name||''))return 'accessory';
+ return null;
+}
+export function headAttachmentPoint(x,y,p,pose){
+ if(p.settings?.faceCoordination)return coordinatedHeadPoint(x,y,p,pose);
+ const kind=headAttachment(p.parts[0]||{});if(!kind)return [x,y];
+ const r=p.rig,fs=r.faceWidth/333,depth=kind==='back'?.94:kind==='front'?1.04:1.08;
+ const z=(depth-1)*(1-depthAmount(p));
+ x+=fs*clamp(pose.yaw??0,-1,1)*(14+40*z+(r.neckY-y)*.028);
+ y-=fs*clamp(pose.pitch??0,-1,1)*(9+30*z);
+ const roll=(clamp(pose.headRoll??0,-8,8)-clamp(pose.bodyRoll??0,-8,8))*Math.PI/360,dx=x-r.neckX,dy=y-r.neckY;
+ return [r.neckX+dx*Math.cos(roll)-dy*Math.sin(roll),r.neckY+dx*Math.sin(roll)+dy*Math.cos(roll)+clamp(pose.nod??0,-6,6)];
+}
+export function headAttachmentMatrix(p,pose){
+ const a=headAttachmentPoint(0,0,p,pose),b=headAttachmentPoint(1,0,p,pose),c=headAttachmentPoint(0,1,p,pose);
+ return [b[0]-a[0],b[1]-a[1],c[0]-a[0],c[1]-a[1],a[0],a[1]];
+}
 export function facePart(part){
+ if(headAttachment(part))return false;
  const kind=secondaryKind(part);if(kind&&kind!=='brow')return false;
  return part.earMotion!==true&&!part.independentAccessory&&!['front','back','arm-r','arm-l','tail'].includes(part.deformGroup)&&!['hair','ear-l','ear-r','chest','tail'].includes(part.role);
 }
@@ -38,7 +61,7 @@ export function faceXYPoint(x,y,p,pose){
  return [x+w*fs*clamp(pose.yaw??0,-1,1)*(14+(r.neckY-y)*.028)+dx,y-w*fs*clamp(pose.pitch??0,-1,1)*9+dy];
 }
 export function featureParallax(part,p,pose){
- if(!p.rig||!p.settings?.rigEnabled)return {x:0,y:0,sx:1};
+ if(!p.rig||!p.settings?.rigEnabled||p.settings.faceCoordination)return {x:0,y:0,sx:1};
  let role=part.role||'static';
  if(part.blinkOverlay||part.faceOverlay){
   const owner=p.parts.find(v=>v.role===(part.faceOverlay||'lash-'+part.blinkOverlay));

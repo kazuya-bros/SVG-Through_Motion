@@ -22,7 +22,7 @@ export function installImportFlow(){
   for(const key of donorKeys){const input=$('donor-'+key),on=extra&&(key==='eyes_closed'?c.eyes==='psd':key==='mouth_closed'?c.mouth==='psd':false);input.disabled=!on;input.required=on&&['eyes_closed','mouth_closed'].includes(key);if(key==='eyes_closed'||key==='mouth_closed')input.closest('.donor-file').hidden=!on;}
   $('eyeSource').disabled=$('mouthSource').disabled=!extra;
   $('importMethodHint').textContent=extra?'次に、元絵・基本のPSDと、使いたい差分PSDを選びます。':'元絵と、その絵を分割したPSDで始められます。Depth PSDも任意で追加できます。';
-  $('importResultHint').textContent=extra?`読み込み後：目は${c.eyes==='psd'?'開閉を確認':'下書きを調整'}、口は${c.mouth!=='auto'?'開閉を確認':'下書きを調整'}。`:'読み込み後：目 → 口の順に閉じ形を整えます。素材が気になるときは「パーツの絵を確認」で比較できます。';
+  $('importResultHint').textContent=extra?`読み込み後：目は${c.eyes==='psd'?'開閉を確認':'下書きを調整'}、口は${c.mouth!=='auto'?'開閉を確認':'下書きを調整'}。`:'読み込み後：目 → 口の順に閉じ形を整えます。素材が気になるときは「PSD／元絵の切り抜きを切り替え」で比較できます。';
  }
  document.querySelectorAll('[name=importMode],#eyeSource,#mouthSource').forEach(input=>input.addEventListener('change',refresh));
  for(const button of document.querySelectorAll('[data-clear-donor]'))button.onclick=()=>{$('donor-'+button.dataset.clearDonor).value='';};

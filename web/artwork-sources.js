@@ -1,3 +1,4 @@
+import {partLabel} from './part-label.js';
 import {svgSignature,matchingRasterSource} from './raster-source.js';
 const keys=['psd','original'];
 const geometry=['x','y','width','height'];
@@ -28,16 +29,16 @@ export async function selectArtworkSource(part,key){
 }
 
 export function installArtworkSources(api){
- const entry=document.createElement('button');entry.id='reviewArtworkSources';entry.className='wide';entry.type='button';entry.textContent='パーツの絵を確認';entry.hidden=true;
+ const entry=document.createElement('button');entry.id='reviewArtworkSources';entry.className='wide';entry.type='button';entry.textContent='PSD／元絵の切り抜きを切り替え';entry.hidden=true;
  document.getElementById('layers').before(entry);
- function refresh(){entry.hidden=!api.project()?.parts.some(p=>p.artworkSources);}
+ function refresh(){entry.hidden=true;}
  entry.onclick=()=>open();
  function open(){
   const project=api.project(),parts=project?.parts.filter(p=>p.artworkSources);if(!parts?.length)return;
   const dialog=document.createElement('dialog');dialog.className='artwork-source-dialog';dialog.setAttribute('aria-labelledby','artworkSourceTitle');
-  dialog.innerHTML='<h2 id="artworkSourceTitle">パーツの絵を確認</h2><p>動かすパーツはPSDの絵を使います。気になるパーツだけ、元絵の切り抜きと比べて変更できます。</p><label>確認するパーツ<select id="artworkSourcePart"></select></label><div class="artwork-source-options"></div><p class="artwork-source-hint" role="status"></p><footer><button class="primary" id="applyArtworkSource" type="button">選んだ絵を使う</button><button id="closeArtworkSource" type="button">閉じる</button></footer>';
+  dialog.innerHTML='<h2 id="artworkSourceTitle">PSD／元絵の切り抜きを切り替え</h2><p>動かすパーツはPSDの絵を使います。気になるパーツだけ、元絵の切り抜きと比べて変更できます。</p><label>切り替えるパーツ<select id="artworkSourcePart"></select></label><div class="artwork-source-options"></div><p class="artwork-source-hint" role="status"></p><footer><button class="primary" id="applyArtworkSource" type="button">選んだ絵を使う</button><button id="closeArtworkSource" type="button">閉じる</button></footer>';
   const select=dialog.querySelector('select'),options=dialog.querySelector('.artwork-source-options'),hint=dialog.querySelector('.artwork-source-hint'),apply=dialog.querySelector('#applyArtworkSource');let choice,busy=false;
-  for(const p of parts){const o=document.createElement('option');o.value=p.id;o.textContent=p.name;select.append(o);}
+  for(const p of parts){const o=document.createElement('option');o.value=p.id;o.textContent=partLabel(p);select.append(o);}
   if(parts.some(p=>p.id===api.selected()))select.value=api.selected();
   const urls=[];
   function show(){

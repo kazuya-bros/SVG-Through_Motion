@@ -127,6 +127,17 @@ class LoopExportTests(unittest.TestCase):
         self.assertEqual(decoded[3], 0)
         self.assertEqual(decoded[(16*32+16)*4+3], 255)
 
+    def test_balanced_webm_keeps_alpha_and_has_fixed_duration(self):
+        import subprocess
+        out=io.BytesIO();im=Image.new('RGBA',(64,64),(0,0,0,0));im.paste((180,90,40,255),(16,16,48,48));im.save(out,format='PNG')
+        r=self.client.post('/api/loop-exports',json=dict(frames=30,width=64,height=64,format='webm-alpha',fps=30,quality='balanced'))
+        self.assertEqual(r.status_code,200,r.text);base='/api/loop-exports/'+r.json()['id']
+        for i in range(30):self.assertEqual(self.client.put(f'{base}/frames/{i}',content=out.getvalue()).status_code,200)
+        r=self.client.post(base+'/finish');self.assertEqual(r.status_code,200,r.text)
+        reader=imageio_ffmpeg.read_frames(r.json()['path']);metadata=next(reader);self.assertAlmostEqual(metadata['duration'],1,places=2);self.assertEqual(metadata['fps'],30);self.assertEqual(sum(1 for _ in reader),30)
+        data=subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(),'-v','error','-c:v','libvpx-vp9','-i',r.json()['path'],'-frames:v','1','-f','rawvideo','-pix_fmt','rgba','-'],capture_output=True,check=True,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0)).stdout
+        self.assertEqual(data[3],0);self.assertEqual(data[(32*64+32)*4+3],255)
+
 
 if __name__ == '__main__':
     unittest.main()

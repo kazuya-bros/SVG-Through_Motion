@@ -5,7 +5,7 @@ export function activateHairControl(id,settings){
   settings.rigEnabled=true;
   return true;
 }
-const rigControlIds=new Set([...hairControlIds,'headTilt','headYaw','headPitch','headNod','bodyFollow','pitchSway','armSwing','neckPivotPick']);
+const rigControlIds=new Set([...hairControlIds,'headIdle','headYawOffset','headRollOffset','headTilt','headYaw','headPitch','headNod','bodyFollow','pitchSway','armSwing','neckPivotPick']);
 export function activateMotionControl(id,settings){
   if(!rigControlIds.has(id)||settings.rigEnabled)return false;
   settings.rigEnabled=true;

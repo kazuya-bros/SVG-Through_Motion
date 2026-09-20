@@ -1,9 +1,27 @@
 <!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI操作・OBS・素材出力</title>
 <style>body{max-width:850px;margin:40px auto;padding:0 24px;font:16px/1.8 system-ui;color:#292d35;background:#faf9f6}pre{padding:16px;background:#ecebea;overflow:auto}code{font-family:monospace}td,th{border-bottom:1px solid #ccc;padding:8px;text-align:left}a{color:#397261}</style>
 <h1>AI操作・OBS・素材出力</h1>
-<p>スタジオで素材を開き「AI・OBS接続を開始」を押してください。この操作で音声の再生を有効にします。操作対象は接続した編集画面1つです。編集画面を閉じると接続も終了します。SpriTalkやクラウドAIの契約は必要ありません。</p>
+<p>素材の準備から補正・動き・出力まで、AIエージェントからAPI / MCPで操作できます。まず接続状態と操作一覧を確認し、必要な工程を依頼してください。</p>
+<h2>エージェントを接続する</h2>
+<p><a href="/api/agent/capabilities">接続状態と対応範囲</a> · <a href="/api/agent/operations">操作一覧</a> · <a href="/api/docs">API仕様</a></p>
+<table><tr><th>工程</th><th>API / MCPでできること</th></tr>
+<tr><td>素材を準備</td><td>画像・PSDの登録、追加レイヤー、候補の選択、位置・役割・透明度の補正、PSD保存</td></tr>
+<tr><td>分割・奥行き</td><td>See-Through分割、補正後のDepth生成、進捗の確認・中止（生成環境が必要）</td></tr>
+<tr><td>編集・仕上げ</td><td>SVG変換、目・口と動きの補正、比較画像の確認、候補の適用・取り消し、書き出し</td></tr>
+<tr><td>キャラクターを使う</td><td>出力セッションの作成・状態確認、声一覧、発話・割り込み・停止、表情と強さの変更、演出の開始・停止・結果確認</td></tr><tr><td>AIと演出</td><td>演出画像の登録・配置、字幕のサイズ・色・書体、時間順の演技とプリセット保存、通常設定への復元。stage.stateのpreview_urlから画像・字幕込みの実画面を取得</td></tr></table>
+<p><strong>画面で行うこと：</strong>編集は素材を開いて「AI・OBS接続を開始」を押します。出力APIが返す表示URLを開く操作、カメラ・マイク・音声再生の初回許可も画面で行います。</p>
+<details open><summary><strong>MCPの接続設定</strong></summary>
+<p>Windows版の同梱サーバーを、利用するエージェントのMCP設定に登録します。commandは展開先、--allow-dirは素材を受け渡すフォルダーの絶対パスへ変更してください。アプリを起動してから接続します。</p>
+<pre id="mcp-config"></pre>
+<p>--allow-dirは複数指定できます。省略時はローカルファイルのアップロード・保存を使えません。状態確認やアプリ内の操作は利用できます。既存ファイルには上書きしません。</p>
+<p>接続後は <code>svg_status → svg_operations → svg_describe</code> の順に確認。<code>svg_read / svg_write / svg_upload</code> で操作し、<code>svg_preview / svg_download</code> で画像と成果物を確認します。</p></details>
+<h2>受付と完了を区別する</h2>
+<p>202は受付です。結果URLやジョブIDを使い、完了・失敗まで確認します。素材の更新にはrevision、発話・表情にはrequest_idを使います。結果が不明な変更操作は、無条件で再送しないでください。</p>
+<script>document.getElementById('mcp-config').textContent=JSON.stringify({mcpServers:{'svg-through':{command:'C:/Apps/SVG-Through/backend/svg-through-server.exe',args:['--mcp','--url',location.origin,'--allow-dir','C:/MyArtwork']}}},null,2);</script>
+<h2>編集画面の操作</h2>
+<p>操作対象は接続した編集画面1つです。編集画面を閉じると編集の接続も終了します。素材の準備や独立した出力のAPIは、編集画面を閉じても使えます。</p>
 <h2>AI・スクリプトからの操作</h2>
-<p>ローカルREST APIを使います。<a href="/api/docs">対話式API仕様</a>と<a href="/openapi.json">OpenAPI JSON</a>から引数を確認できます。MCPサーバーは同梱していません。シェル・HTTPリクエストを使えるAIから呼び出せます。</p>
+<p>ローカルREST APIと同梱MCPは同じ処理を呼び出します。<a href="/api/docs">対話式API仕様</a>と<a href="/openapi.json">OpenAPI JSON</a>からも引数を確認できます。</p>
 <pre>GET  /api/control/status
 GET  /api/projects
 POST /api/control/commands

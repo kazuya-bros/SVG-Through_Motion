@@ -4,6 +4,8 @@ import {mouthFrame,transformPoint,dragMouth} from './mouth-gizmo.js';
 import {transformBox,artworkBounds} from './transform-box.js';
 import {closedMouthArtwork} from './mouth-controls.js';
 import {closedProfile,closedPoints} from './closed-mouth.js';
+import {activeSequence,mouthSequenceCrop} from './rife-morph.js';
+import {mouthOffset} from './anime-mouth.js';
 
 const ns='http://www.w3.org/2000/svg';
 export function installMouthWorkbench(api){
@@ -11,11 +13,33 @@ export function installMouthWorkbench(api){
  box.innerHTML=`<header><div><strong>口を直接編集</strong><span class="mouth-mode-caption">輪郭をつかんで調整</span></div><button id="mouthDone" class="primary">編集を終える</button></header>
  <div class="mouth-tool-row"><div class="mouth-shape-chips" role="group" aria-label="編集する口形">${['closed','open','a','i','u','e','o'].map((k,i)=>`<button data-shape="${k}">${['閉じ口','開いた口','あ','い','う','え','お'][i]}</button>`).join('')}</div><div class="mouth-history"><button id="mouthUndo" aria-label="口の編集を元に戻す">↶ 元に戻す</button><button id="mouthRedo" aria-label="口の編集をやり直す">↷</button></div></div>
  <div class="mouth-tool-row"><div class="mouth-targets"><button id="mouthTarget" class="active">口の形</button><button id="teethTarget">歯の位置・大きさ</button></div><label class="mouth-zoom-label">表示<select id="mouthZoom"><option value="mouth">口元を拡大</option><option value="face">顔全体</option><option value="full">全身</option></select></label></div>
- <div class="mouth-viewport" id="mouthViewport"><canvas aria-label="編集するキャラクターの背景"></canvas><svg xmlns="${ns}" id="mouthDirectSvg" aria-label="口の直接編集キャンバス" tabindex="0"><g id="mouthDirectArt"></g><g id="mouthDirectHandles"></g></svg><div id="mouthPreparing" role="status">顔のプレビューを準備中…</div></div>
+ <div class="mouth-viewport" id="mouthViewport"><canvas aria-label="編集するキャラクターの背景"></canvas><canvas id="mouthReviewCanvas" hidden aria-label="RIFEの口のプレビュー"></canvas><svg xmlns="${ns}" id="mouthDirectSvg" aria-label="口の直接編集キャンバス" tabindex="0"><g id="mouthDirectArt"></g><g id="mouthDirectHandles"></g></svg><div id="mouthPreparing" role="status">顔のプレビューを準備中…</div></div>
  <footer><span id="mouthGestureHint">中央：移動　左右：幅　下：開き　上の丸：傾き</span><span id="mouthEditTiming"></span></footer>`;
  document.getElementById('stage').append(box);
  const $=id=>box.querySelector('#'+id),surface=$('mouthDirectSvg'),art=$('mouthDirectArt'),handles=$('mouthDirectHandles'),canvas=box.querySelector('canvas');
  let active=false,background=null,token=0,drag=null,scheduled=0,target='mouth',crop=null,dirty=false,manualCrop=null,pan=null,boxBounds=null;
+ let review=null,reviewKey=null,reviewFeature=null,reviewPart=null,reviewSvg=null,reviewTicket=0,reviewPending=false;
+ const reviewCanvas=$('mouthReviewCanvas');
+ function clearReview(){reviewTicket++;review?.dispose();review=null;reviewKey=null;reviewFeature=null;reviewPart=null;reviewSvg=null;reviewPending=false;reviewCanvas.hidden=true;reviewCanvas.width=reviewCanvas.height=1;}
+ function drawReview(scene,s,pose){
+  const feature=activeSequence(scene,'mouth',s),key=JSON.stringify({...s,previewAmount:undefined}),part=scene.parts[0];
+  if(reviewKey!==key||reviewFeature!==feature||reviewPart!==part||reviewSvg!==part.svgText){
+   clearReview();reviewKey=key;reviewFeature=feature;reviewPart=part;reviewSvg=part.svgText;reviewPending=true;
+   const ticket=reviewTicket;box.dataset.reviewBuilds=String(+(box.dataset.reviewBuilds||0)+1);
+   prepareCanvasRenderer(mouthSequenceCrop(scene),512,{allowUpscale:true}).then(renderer=>{
+    if(!active||ticket!==reviewTicket){renderer.dispose();return;}review=renderer;reviewPending=false;redraw();
+   }).catch(error=>{if(active&&ticket===reviewTicket){reviewPending=false;$('mouthEditTiming').textContent='口のプレビューを準備できませんでした: '+error.message;}});
+   art.innerHTML=`<rect x="${feature.box[0]}" y="${feature.box[1]}" width="${feature.box[2]}" height="${feature.box[3]}" fill="transparent"/>`;
+  }
+  reviewCanvas.hidden=false;
+  if(review&&crop){
+   const w=canvas.width,h=canvas.height;if(reviewCanvas.width!==w)reviewCanvas.width=w;if(reviewCanvas.height!==h)reviewCanvas.height=h;
+   const ctx=reviewCanvas.getContext('2d');ctx.clearRect(0,0,w,h);review.draw(pose);const [x,y,bw,bh]=feature.box;
+   ctx.drawImage(review.canvas,(x-crop.x)*w/crop.w,(y+mouthOffset(s,scene.width)-crop.y)*h/crop.h,bw*w/crop.w,bh*h/crop.h);
+  }
+  handles.replaceChildren();$('mouthGestureHint').textContent='口の位置・横幅・傾きを確認　ホイール：拡大縮小　ドラッグ：表示を移動';
+  $('mouthEditTiming').textContent=reviewPending?'口のプレビューを準備中…':'口の開閉を確認中';
+ }
  const reviewing=()=>document.body.dataset.task==='edit'&&(document.body.dataset.mouthReview==='true'||document.body.dataset.mouthStage==='open');
  const settings=()=>({...api.project().settings,previewAmount:api.amount(),background:'transparent',rigEnabled:false,vowels:!['closed','open'].includes(api.shape()),imageWidth:api.project().width});
  const point=e=>new DOMPoint(e.clientX,e.clientY).matrixTransform(surface.getScreenCTM().inverse());
@@ -37,8 +61,11 @@ export function installMouthWorkbench(api){
  }
  function draw(){
   scheduled=0;if(!active||!api.part())return;const started=performance.now(),p=api.project(),part=api.part(),key=api.shape(),s=settings();
-  const amount=api.amount(),scene={name:'口の形',width:p.width,height:p.height,parts:[part],settings:s},pose={mouth:amount,vowel:key==='closed'?'a':key,blinkL:0,blinkR:0};
+  const amount=api.amount(),scene={name:'口の形',width:p.width,height:p.height,parts:[part],settings:s,rifeMorph:reviewing()?p.rifeMorph:undefined},pose={mouth:amount,vowel:key==='closed'?'a':key,blinkL:0,blinkR:0};
   handles.style.display=reviewing()||(key==='closed'?amount>=.18:amount<1)?'none':'';
+  if(!crop)drawBackground();
+  if(reviewing()&&activeSequence(scene,'mouth',s)){drawReview(scene,s,pose);box.dataset.drawMs=(performance.now()-started).toFixed(1);return;}
+  if(reviewKey!==null)clearReview();
   const root=new DOMParser().parseFromString(cloneIds(sceneSvg(scene,s,false),'direct-mouth-'),'image/svg+xml').documentElement;
   art.replaceChildren(...root.childNodes);applyPose(surface,pose,scene,s);
   box.querySelectorAll('[data-shape]').forEach(b=>{const on=b.dataset.shape===key;b.classList.toggle('active',on);b.setAttribute('aria-pressed',on);b.hidden=!['closed','open'].includes(b.dataset.shape)&&!(api.project().settings.vowels&&(api.part().mouthVariants||document.getElementById('vowelOptions').open));});
@@ -88,7 +115,7 @@ export function installMouthWorkbench(api){
    renderer.draw({mouth:0,blinkL:0,blinkR:0});background=renderer;drawBackground();$('mouthPreparing').hidden=true;
   }catch(e){if(active&&generation===token)$('mouthPreparing').textContent='背景を準備できませんでした: '+e.message;}
  }
- function close({rebuild=true}={}){if(!active)return;cancelDrag();pan=null;active=false;token++;box.hidden=true;background?.dispose();background=null;crop=null;manualCrop=null;api.end(rebuild&&dirty);dirty=false;}
+ function close({rebuild=true}={}){if(!active)return;cancelDrag();pan=null;active=false;token++;clearReview();art.replaceChildren();box.hidden=true;background?.dispose();background=null;crop=null;manualCrop=null;api.end(rebuild&&dirty);dirty=false;}
  function cancelDrag(){if(!drag)return;const before=drag.before;drag=null;api.restore(before);redraw();}
  surface.onpointerdown=e=>{
   if(e.button===0&&reviewing()&&e.target.closest('#mouthDirectArt')){e.preventDefault();document.dispatchEvent(new CustomEvent('shapeeditrequest',{detail:{step:'mouth'}}));return;}

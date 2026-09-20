@@ -1,4 +1,4 @@
-"""Bounded-memory PNG-to-MP4 export; no whole-loop ZIP or frame directory."""
+"""Frame-stepped PNG-to-video export; no whole-loop ZIP or frame directory."""
 from __future__ import annotations
 import io
 import re
@@ -29,6 +29,7 @@ class LoopSpec(BaseModel):
     height: int = Field(ge=1, le=1080)
     format: Literal['mp4', 'webm-alpha'] = 'mp4'
     fps: int = Field(default=30, ge=1, le=60)
+    quality: Literal['lossless', 'balanced'] = 'lossless'
 
 def lookup(eid):
     if not re.fullmatch(r'[a-f0-9]{32}', eid) or eid not in jobs:
@@ -73,7 +74,9 @@ def begin(spec: LoopSpec):
         log = (directory / 'encoder.log').open('wb')
         alpha = spec.format == 'webm-alpha'
         output = directory / ('svg-through-motion.partial.webm' if alpha else 'svg-through-motion.partial.mp4')
-        codec = (['-c:v', 'libvpx-vp9', '-lossless', '1', '-pix_fmt', 'yuva420p',
+        webm_quality = (['-lossless', '1'] if spec.quality == 'lossless' else
+                        ['-crf', '18', '-b:v', '0', '-row-mt', '1', '-tile-columns', '1', '-threads', '4'])
+        codec = (['-c:v', 'libvpx-vp9', *webm_quality, '-pix_fmt', 'yuva420p', '-g', str(spec.fps * 2),
                   '-auto-alt-ref', '0', '-lag-in-frames', '0', '-deadline', 'good', '-cpu-used', '4'] if alpha else
                  ['-vf', 'scale=1080:1350:force_original_aspect_ratio=decrease:flags=lanczos,pad=1080:1350:(ow-iw)/2:(oh-ih)/2:color=white',
                   '-c:v', 'libx264', '-preset', 'medium', '-crf', '17', '-pix_fmt', 'yuv420p', '-movflags', '+faststart'])

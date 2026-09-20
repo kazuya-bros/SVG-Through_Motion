@@ -16,6 +16,8 @@ export function returnToMenu(saved){
  location.assign(id?'/?saved='+id:'/');
 }
 export function installMainMenu({openFile}){
+ const effects=document.createElement('button');effects.id='startEffects';effects.type='button';effects.innerHTML='<svg viewBox="0 0 32 32" aria-hidden="true"><path d="m16 3 3.5 9.5L29 16l-9.5 3.5L16 29l-3.5-9.5L3 16l9.5-3.5Z"/></svg><span>演出を<br>作る</span>';document.getElementById('startUse').before(effects);
+ effects.onclick=()=>location.assign('/?menu=effects');
  const prepare=document.createElement('a');prepare.href='/web/materials.html';prepare.className='material-entry-link';prepare.textContent='パーツを準備・補正する';prepare.style.cssText='display:inline-block;margin:12px 0;padding:12px 20px;border:1px solid #cbd5e7;border-radius:10px;color:#415ba5;background:white;text-decoration:none;font-weight:600';document.getElementById('startOwn')?.parentElement.after(prepare);
  const $=id=>document.getElementById(id),query=new URLSearchParams(location.search);
  const choices=readSaved(),id=query.get('saved');
@@ -50,18 +52,26 @@ export function installMainMenu({openFile}){
  }
  $('startUse').onclick=()=>location.assign('/?menu=use'+(query.has('saved')?'&saved='+encodeURIComponent(query.get('saved')):''));
  $('startUse').disabled=false;
- if(query.get('menu')!=='use')return;
+ if(!['project','prepared','runtime'].some(k=>/^[a-f0-9]{32}$/.test(query.get(k)||'')))document.documentElement.classList.remove('route-loading');
+ const effectEditor=query.get('menu')==='effects';
+ if(!effectEditor&&query.get('menu')!=='use')return;
  $('startLanding').hidden=true;$('startSourceHost').hidden=true;$('startUseHost').hidden=false;
+ if(effectEditor){$('startUseHost').querySelector('h1').textContent='演出を作るキャラクターを選ぶ';$('startUseHost').querySelector('h1 + p').textContent='保存したキャラクターを選んで、演出を作成・保存します。';$('useSavedCharacter').textContent='このキャラクターで演出を作る';}
  picker('savedCharacter','savedCharacterThumbnail','savedCharacterInfo','useSavedCharacter');
  $('savedCharacterChoices').hidden=!choices.length;$('noSavedCharacter').hidden=!!choices.length;
- $('useSavedCharacter').disabled=$('editSavedCharacter').disabled=!choices.length;
- $('useSavedCharacter').onclick=()=>{const id=savedId($('savedCharacter').value);if(id)location.assign('/?project='+id+'&mode=use');};
- $('editSavedCharacter').onclick=()=>{const id=savedId($('savedCharacter').value);if(id)location.assign('/?project='+id);};
+ $('useSavedCharacter').disabled=!choices.length;
+ let opening=false;
+ async function openCharacter(load){
+  if(opening)return;opening=true;const message=$('useProjectStatus');message.textContent='キャラクターを読み込んでいます…';
+  $('useSavedCharacter').disabled=$('savedCharacter').disabled=$('useProjectFile').disabled=true;
+  try{await openFile(await load(),{effects:effectEditor});message.textContent='';}
+  catch(error){message.textContent='読み込めませんでした：'+error.message;}
+  finally{opening=false;$('useSavedCharacter').disabled=!choices.length;$('savedCharacter').disabled=$('useProjectFile').disabled=false;}
+ }
+ $('useSavedCharacter').onclick=()=>openCharacter(async()=>{const response=await fetch($('savedCharacter').value);if(!response.ok)throw Error('保存ファイルが見つかりません。プロジェクトファイルから開いてください。');return response.json();});
  $('useProjectFile').onchange=async e=>{
   const file=e.target.files[0];if(!file)return;
-  const message=$('useProjectStatus');message.textContent='キャラクターを読み込んでいます…';
-  try{if(file.size>100*1024**2)throw Error('プロジェクトは100MB以下にしてください');await openFile(JSON.parse(await file.text()));message.textContent='';}
-  catch(error){message.textContent='読み込めませんでした：'+error.message;}
-  finally{e.target.value='';}
+  await openCharacter(async()=>{if(file.size>100*1024**2)throw Error('プロジェクトは100MB以下にしてください');return JSON.parse(await file.text());});
+  e.target.value='';
  };
 }

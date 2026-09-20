@@ -1,10 +1,14 @@
+import {partMotion} from './part-motion.js';
+export {partMotion} from './part-motion.js';
+import {activeGrid,sequencePart,sequenceSvg,sequenceBlend,sequenceMesh,morphSvg,morphTriangles,idleEyeWeight,idleEyeProject,idleEyePose} from './rife-morph.js';
+import {repairTraceMasks} from './trace-mask.js';
 import {attachmentOwner} from './attachments.js';
 import {secondaryRigid} from './secondary-motion.js';
 import {naturalEarPose,naturalEarFilter,earFilterMatrix} from './natural-ears.js';
 import {animeMouth,animeMouthSvg,mouthOffset} from './anime-mouth.js';
 import {chestRegion,chestFilter,chestDisplacement} from './chest-motion.js';
 import {earEnabled,idleGaze} from './idle-expression.js';
-import {facePart,faceFilter,jawFilter,faceFilterMatrix} from './face-rig.js';
+import {facePart,faceFilter,jawFilter,faceFilterMatrix,headAttachment,headAttachmentMatrix} from './face-rig.js';
 import {closedLashArtwork} from './eyelid-controls.js';
 import {eyeThroughPasses,eyeThroughStrength} from './eye-through-hair.js';
 import {mouthVariantWeights} from './mouth-variants.js';
@@ -50,16 +54,6 @@ export function mouthScale(open, settings={},pose={}) {
   // Local correction peaks at 20% opening and eases out before the full-open pose.
   const near=smooth(amount/.2)*(1-smooth((amount-.2)/.45)),t=normalizeMouthTuning(settings.mouthTuning).transition;
   return [(closed+(1-closed)*blend)*(1+(vx-1)*blend)*(1+(t.width-1)*near),(.045+.955*amount)*(1+(vy-1)*blend)*(1+(t.height-1)*near)];
-}
-export function partMotion(part,pose,project) {
-  if(part.followPart){const owner=attachmentOwner(part,project.motionParts||project.parts);if(owner!==part)return partMotion({...owner,followPart:null},pose,project);}
-  if(pose.pivotOverrides?.[part.id])part={...part,...pose.pivotOverrides[part.id]};
-  const sign=part.role==='ear-r'?-1:part.role==='ear-l'?1:part.x+part.width/2<project.width/2?-1:1;
-  const strength=clamp(part.motionStrength??1,0,2);
-  const secondary=secondaryRigid(part,pose,project);
-  return {x:0,y:secondary.y+((part.role==='chest'?(pose.chestOffset||0):0)-(earEnabled(part)?(pose.earLift||0):0))*strength,
-    rotation:earEnabled(part)?(pose[part.role==='ear-l'?'earAngleL':part.role==='ear-r'?'earAngleR':'earAngle']??pose.earAngle??0)*sign*strength:part.role==='tail'?(pose.tailAngle||0)*strength:part.role==='hair'?(pose.hairAngle||0)*sign*strength:secondary.rotation,
-    pivotX:part.pivotX??part.x+part.width/2,pivotY:part.pivotY??part.y+part.height*(earEnabled(part)?.9:.08)};
 }
 
 export function loopPose(t, settings) {
@@ -133,23 +127,27 @@ export function sceneSvg(project, settings = project.settings || {}, meshRig=tru
   const silhouettes = ['l','r'].filter(s => aperture(s)).map(s => {
     const p=aperture(s),[ax,ay]=anchor(project,s);
     const shape=white(s)?cloneIds(p.svgText,`clip-${s}-`):`<rect width="${p.width}" height="${p.height}" fill="white"/>`;
-    return `<mask id="eye-clip-${s}" maskUnits="userSpaceOnUse" x="0" y="0" width="${w}" height="${h}" style="mask-type:alpha"><g transform="translate(${ax} ${ay})"><g data-channel="eye-${s}"><g transform="translate(${-ax} ${-ay})"><g transform="translate(${p.x} ${p.y})">${shape}</g></g></g></g></mask>`;
+    const raw=`<g transform="translate(${p.x} ${p.y})">${shape}</g>`;
+    const warped=morphSvg(raw,project,`eye-${s}`,`rife-mask-${s}`,settings);
+    return `<mask id="eye-clip-${s}" maskUnits="userSpaceOnUse" x="0" y="0" width="${w}" height="${h}" style="mask-type:alpha">${warped||`<g transform="translate(${ax} ${ay})"><g data-channel="eye-${s}"><g transform="translate(${-ax} ${-ay})">${raw}</g></g></g>`}</mask>`;
   }).join('');
   const markup = project.parts.map(p => {
+    const sequence=sequencePart(project,p,settings);
+    if(sequence&&!sequence.owner)return `<g id="rig-part-${p.id}" data-part="${p.id}"/>`;
     const side = p.role.endsWith('-l') ? 'l' : 'r';
     const isEye = /^(white|iris|lash)-[lr]$/.test(p.role);
     const [ax, ay] = anchor(project, side);
-    let source=p.svgText;
+    let source=repairTraceMasks(p.svgText);
     if(meshRig&&rigActive(project,settings)&&p.role==='static'&&p.spatialBounds){
       let index=0;source=source.split(/(<defs\b[\s\S]*?<\/defs>)/g).map(chunk=>chunk.startsWith('<defs')?chunk:chunk.replace(/<path\b[^>]*\/>/g,path=>path.replace('<path',`<path id="rig-shape-${p.id}-${index++}"`))).join('');
     }
     const content = `<g transform="translate(${p.x} ${p.y})">${source}</g>`;
     let body = p.role.startsWith('iris-') && aperture(side) ? `<g mask="url(#eye-clip-${side})"><g data-channel="iris-shift-${p.id}"><g data-channel="iris-size-${p.id}"><g transform="translate(${-p.x-p.width/2} ${-p.y-p.height/2})">${content}</g></g></g></g>` : content;
     if(p.blinkOverlay)body=`<g data-channel="hair-lash-${p.blinkOverlay}">${body}</g>`;
-    if (isEye) {
+    if (isEye && !sequence) {
       if(!p.role.startsWith('lash-'))body=`<g data-channel="eye-content-${side}">${body}</g>`;
       // The lid aperture closes over a stationary iris; never squash its pupil or highlight.
-      if(!p.role.startsWith('iris-'))body = `<g transform="translate(${ax} ${ay})"><g data-channel="eye-${side}" transform="scale(1 1)"><g transform="translate(${-ax} ${-ay})">${body}</g></g></g>`;
+      if(!p.role.startsWith('iris-'))body = morphSvg(body,project,`eye-${side}`,`rife-${p.id}`,settings)||`<g transform="translate(${ax} ${ay})"><g data-channel="eye-${side}" transform="scale(1 1)"><g transform="translate(${-ax} ${-ay})">${body}</g></g></g>`;
       if (p.role.startsWith('lash-')) {
         const whitePart=white(side), lidWidth=whitePart?.width || p.width*.8;
         const closed=p.closedSvgText ? `<g transform="translate(${p.x} ${p.y})">${closedLashArtwork(p)}</g>` :
@@ -157,23 +155,31 @@ export function sceneSvg(project, settings = project.settings || {}, meshRig=tru
         body = `<g data-channel="open-${side}">${body}</g><g data-channel="closed-${side}" opacity="0">${closed}</g>`;
       }
     }
-    if (p.role === 'mouth' && p.mouthMode==='source-open' && !p.openSvgText) {
+    if (!sequence && p.role === 'mouth' && p.mouthMode==='source-open' && !p.openSvgText) {
       const cx=p.x+p.width/2,cy=p.y+p.height/2;
       const teeth=['a','i','u','e','o'].map(k=>`<g data-channel="mouth-teeth-${p.id}-${k}" opacity="0"><g transform="translate(${p.x} ${p.y})">${mouthTeethSvg(p,k,settings)}</g></g>`).join('');
-      const artwork=p.mouthVariants&&settings.vowels?Object.entries({base:p.svgText,...p.mouthVariants}).map(([key,text])=>`<g data-channel="mouth-variant-${p.id}-${key}"><g transform="translate(${p.x} ${p.y})">${cloneIds(text,`variant-${p.id}-${key}-`)}</g></g>`).join(''):content;
+      let artwork=p.mouthVariants&&settings.vowels?Object.entries({base:p.svgText,...p.mouthVariants}).map(([key,text])=>`<g data-channel="mouth-variant-${p.id}-${key}"><g transform="translate(${p.x} ${p.y})">${cloneIds(text,`variant-${p.id}-${key}-`)}</g></g>`).join(''):content;
+      artwork=morphSvg(artwork,project,'mouth',`rife-${p.id}`,settings)||artwork;
       body=`<g data-channel="mouth-tune-shift-${p.id}"><g data-channel="mouth-tune-turn-${p.id}"><g transform="translate(${cx} ${cy})"><g data-channel="mouth-native"><g transform="translate(${-cx} ${-cy})">${artwork}${teeth}</g></g></g></g></g>`;
       if(p.closedSvgText){
         const closed=`<g transform="translate(${p.x} ${p.y})">${closedMouthArtwork(p,settings)}</g>`;
         body=`<g data-channel="mouth-native-open">${body}</g><g data-channel="mouth-native-closed"><g transform="translate(${cx} ${cy})"><g data-channel="mouth-native-width"><g transform="translate(${-cx} ${-cy})">${closed}</g></g></g></g>`;
       }
-    } else if (p.role === 'mouth' && (p.openSvgText || p.mouthMode==='synthetic')) {
+    } else if (!sequence && p.role === 'mouth' && (p.openSvgText || p.mouthMode==='synthetic')) {
       const cx = p.x + p.width / 2, cy = p.y + p.height / 2;
       const mw = Math.max(12, p.width * .72), mh = Math.max(14, p.width * .48);
       const opening = p.openSvgText ? `<g transform="translate(${-p.width/2} ${-p.height/2})">${p.openSvgText}</g>` :
         `<path d="M ${-mw/2} 0 Q 0 ${-mh*.25} ${mw/2} 0 Q ${mw*.44} ${mh} 0 ${mh} Q ${-mw*.44} ${mh} ${-mw/2} 0Z" fill="#532b2c" stroke="#38252a" stroke-width="1.2"/><path d="M ${-mw*.3} ${mh*.72} Q 0 ${mh*.36} ${mw*.3} ${mh*.72} Q 0 ${mh*1.06} ${-mw*.3} ${mh*.72}" fill="#d68d88"/>`;
       body = `<g data-channel="mouth-closed">${content}</g><g transform="translate(${cx} ${cy})"><g data-channel="mouth-open" transform="scale(1 0)">${opening}</g></g>`;
     }
-    if (p.role==='mouth' && p.mouthMode!=='source-open' && !p.openSvgText && p.mouthMode!=='synthetic')body=content;
+    if (!sequence && p.role==='mouth' && p.mouthMode!=='source-open' && !p.openSvgText && p.mouthMode!=='synthetic')body=content;
+    if(sequence){
+      body=sequenceSvg(sequence.feature,sequence.key);
+      if(sequence.key!=='mouth'){
+        const idle=idleEyeProject(project,sequence.key),native=cloneIds(sceneSvg(idle,idle.settings,false),`idle-${sequence.key}-`).replace(/^<svg\b[^>]*>/,'<g>').replace(/<\/svg>$/,'</g>').replace(/data-channel="([^"]+)"/g,(_,channel)=>`data-channel="rife-idle:${sequence.key}|${channel}"`);
+        body=`<g style="isolation:isolate"><g style="mix-blend-mode:plus-lighter" data-channel="rife-idle-weight:${sequence.key}">${native}</g><g style="mix-blend-mode:plus-lighter" data-channel="rife-sequence-weight:${sequence.key}" opacity="0">${body}</g></g>`;
+      }
+    }
     if(p.role==='mouth'){
       if(settings.mouthStyle==='anime'&&(p.openSvgText||p.mouthMode==='synthetic'))body=`<g data-channel="mouth-closed">${content}</g>${animeMouthSvg(p)}`;
       body=`<g data-channel="mouth-position">${body}</g>`;
@@ -185,7 +191,7 @@ export function sceneSvg(project, settings = project.settings || {}, meshRig=tru
       const cx=p.x+p.width/2,cy=p.y+p.height/2;
       body=`<g data-channel="face-shift-${p.id}"><g transform="translate(${cx} ${cy})"><g data-channel="face-scale-${p.id}"><g transform="translate(${-cx} ${-cy})">${body}</g></g></g></g>`;
     }
-    return `<g id="rig-part-${p.id}" data-part="${p.id}" opacity="${p.opacity}" ${p.visible ? '' : 'display="none"'}>${body}</g>`;
+    return `<g id="rig-part-${p.id}" data-part="${p.id}" opacity="${sequence?1:p.opacity}" ${p.visible ? '' : 'display="none"'}>${body}</g>`;
   }).join('');
   const background=settings.background==='white'?`<rect width="${w}" height="${h}" fill="white"/>`:'';
   let art=markup, extra='';
@@ -240,7 +246,32 @@ export function channelValue(channel, pose, project, settings=project.settings||
     const angle=pivot?clamp((settings.armSwing??0)*(p.motionStrength??1),0,10)*Math.sin((pose.hairPhase||0)-.35)*(p.deformGroup==='arm-r'?1:-1):0;
     return {attribute:'transform',type:'rotate',value:`${num(angle)} ${p.pivotX??pivot?.x??0} ${p.pivotY??pivot?.y??0}`};
   }
-  if(channel.startsWith('group')){const [prefix,inner]=channel.split(':');return channelValue(inner,pose,rigGroups(project)[+prefix.slice(5)],settings);}
+  if(channel.startsWith('group')){const at=channel.indexOf(':'),prefix=channel.slice(0,at),inner=channel.slice(at+1);return channelValue(inner,pose,rigGroups(project)[+prefix.slice(5)],settings);}
+  if(channel.startsWith('rife-idle:')){
+    const end=channel.indexOf('|'),key=channel.slice(10,end),idle=idleEyeProject(project,key);
+    return channelValue(channel.slice(end+1),idleEyePose(pose,key),idle,idle.settings);
+  }
+  if(channel.startsWith('rife-idle-weight:')||channel.startsWith('rife-sequence-weight:')){
+    const key=channel.split(':')[1],weight=idleEyeWeight(key==='eye-l'?pose.blinkL:pose.blinkR);
+    return {attribute:'opacity',value:channel.startsWith('rife-idle-weight:')?weight:1-weight};
+  }
+  if(channel.startsWith('rife-contour:')){
+    const [,key,index,triangle,kind]=channel.split(':'),f=project.rifeMorph.features[key];
+    const entry=sequenceBlend(f,pose.mouth).find(v=>v.index===+index),t=entry?sequenceMesh(f,entry)[+triangle]:{b:0,d:1,f:0};
+    return {attribute:'transform',type:kind==='shift'?'translate':kind==='skew'?'skewY':'scale',value:kind==='shift'?`0 ${t.f}`:kind==='skew'?Math.atan(t.b)*180/Math.PI:`1 ${t.d}`};
+  }
+  if(channel.startsWith('rife-frame:')||channel.startsWith('rife-align:')){
+    const [,key,index,kind]=channel.split(':'),f=project.rifeMorph.features[key];
+    const entry=sequenceBlend(f,key==='mouth'?pose.mouth:key==='eye-l'?pose.blinkL:pose.blinkR).find(v=>v.index===+index);
+    if(!kind)return {attribute:'opacity',value:entry?.weight||0};
+    const scale=entry?.scale??1,offset=entry?.offset??0;
+    return {attribute:'transform',type:kind==='shift'?'translate':'scale',value:kind==='shift'?`0 ${num(f.box[1]*(1-scale)+offset*f.box[3])}`:`1 ${num(scale)}`};
+  }
+  if(channel.startsWith('rife:')){
+    const [,key,index,kind]=channel.split(':'),f=activeGrid(project,key,settings)||project.rifeMorph.features[key],value=key==='mouth'?pose.mouth:key==='eye-l'?pose.blinkL:pose.blinkR;
+    const t=morphTriangles(f,key,value,settings.rifeStrength??1)[+index];
+    return {attribute:'transform',type:kind==='shift'?'translate':kind==='skew'?'skewY':'scale',value:kind==='shift'?`0 ${num(t.f)}`:kind==='skew'?num(Math.atan(t.b)*180/Math.PI):`1 ${num(t.d)}`};
+  }
   if(channel.startsWith('iris-shift-')||channel.startsWith('iris-size-')){const part=project.parts.find(p=>p.id===channel.split('-').slice(2).join('-')),m=irisMotion(part,pose);return channel.startsWith('iris-shift-')?{attribute:'transform',type:'translate',value:`${num(m.cx+m.x)} ${num(m.cy+m.y)}`}:{attribute:'transform',type:'scale',value:`${num(m.scale)} ${num(m.scale)}`};}
   const blink = clamp(channel.endsWith('-l') ? pose.blinkL : pose.blinkR);
   if(channel.startsWith('mesh-')) {
@@ -259,6 +290,7 @@ export function channelValue(channel, pose, project, settings=project.settings||
   }
   if(channel.startsWith('mouth-variant-')){const [, ,id,key]=channel.split('-'),part=project.parts.find(p=>p.id===id);return {attribute:'opacity',value:num(mouthVariantWeights(part,pose,settings)[key]||0)};}
   if(channel.startsWith('mouth-teeth-'))return {attribute:'opacity',value:num(mouthTeethOpacity(channel.slice(-1),pose,settings))};
+  if(channel.startsWith('svg-head:')){const [,kind,id]=channel.split(':');const part=project.parts.find(p=>p.id===id),m=decompose(headAttachmentMatrix({...project,parts:[part]},pose));return {attribute:'transform',type:kind,value:m[kind].map(num).join(' ')};}
   if(channel.startsWith('secondary-')) {
     const part=project.parts.find(p=>p.id===channel.split('-').slice(2).join('-'));
     const m=partMotion(part,pose,project);
@@ -277,12 +309,12 @@ export function channelValue(channel, pose, project, settings=project.settings||
     case 'sway': return {attribute:'transform', type:'rotate', value:`${num(pose.sway || 0)} ${project.width/2} ${project.height*.75}`};
     case 'breathe': return {attribute:'transform', type:'translate', value:`0 ${num((pose.bounce||0)-(pose.breathe || 0))}`};
     case 'eye-l': case 'eye-r': return {attribute:'transform', type:'scale', value:`1 ${num(Math.max(.025, 1 - blink))}`};
-    case 'eye-content-l': case 'eye-content-r': return {attribute:'opacity',value:num(1-smooth((blink-.65)/.3))};
-    case 'open-l': case 'open-r': return {attribute:'opacity', value:num(1-clamp((blink-.65)/.25))};
-    case 'closed-l': case 'closed-r': return {attribute:'opacity', value:num(clamp((blink-.65)/.25))};
+    case 'eye-content-l': case 'eye-content-r': {const rife=activeGrid(project,'eye-'+channel.slice(-1),settings);return {attribute:'opacity',value:num(1-smooth(rife?(blink-.88)/.12:(blink-.65)/.3))};}
+    case 'open-l': case 'open-r': {const rife=activeGrid(project,'eye-'+channel.slice(-1),settings);return {attribute:'opacity',value:num(1-clamp(rife?(blink-.88)/.12:(blink-.65)/.25))};}
+    case 'closed-l': case 'closed-r': {const rife=activeGrid(project,'eye-'+channel.slice(-1),settings);return {attribute:'opacity',value:num(clamp(rife?(blink-.88)/.12:(blink-.65)/.25))};}
     case 'mouth-closed': return {attribute:'opacity', value:num(clamp(1 - clamp(pose.mouth) * 8))};
     case 'mouth-open': {const [vx,vy]=vowelScale(pose,settings);return {attribute:'transform', type:'scale', value:`${num(vx)} ${num(clamp(pose.mouth)*vy)}`};}
-    case 'mouth-native': return {attribute:'transform',type:'scale',value:mouthScale(pose.mouth,settings,pose).map(num).join(' ')};
+    case 'mouth-native': {const scales=mouthScale(pose.mouth,settings,pose);if(activeGrid(project,'mouth',settings))scales[1]/=.045+.955*clamp(pose.mouth);return {attribute:'transform',type:'scale',value:scales.map(num).join(' ')};}
     case 'mouth-native-width': return {attribute:'transform',type:'scale',value:`${num(mouthScale(pose.mouth,settings,pose)[0])} 1`};
     case 'mouth-native-open': return {attribute:'opacity',value:num(nativeMouthOpenOpacity(pose.mouth))};
     case 'mouth-native-closed': return {attribute:'opacity',value:num(1-nativeMouthOpenOpacity(pose.mouth))};
@@ -333,6 +365,7 @@ export function animatedSvg(project, settings, parse) {
         if(!faceRun||faceRun.nextElementSibling!==node){faceRun=svg.ownerDocument.createElementNS(ns,'g');node.before(faceRun);faceRun.setAttribute('filter','url(#face-local)');}
         faceRun.append(node);
       }else faceRun=null;
+      if(headAttachment(p)){let target=node;for(const kind of ['scale','skewX','rotate','translate'])target=group('svg-head:'+kind+':'+p.id,target);}
       if(['front','back'].includes(p.deformGroup)){
         const root=project.rig.headTop+(p.deformGroup==='front'?project.height*.04:0);
         const outer=svg.ownerDocument.createElementNS(ns,'g'),inner=svg.ownerDocument.createElementNS(ns,'g');outer.setAttribute('transform',`translate(0 ${root})`);inner.setAttribute('transform',`translate(0 ${-root})`);node.replaceWith(outer);outer.append(inner);inner.append(node);group('svg-hair-'+p.id,inner);

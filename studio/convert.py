@@ -17,6 +17,7 @@ NS = 'http://www.w3.org/2000/svg'
 ET.register_namespace('', NS)
 MAX_PIXELS = 16_777_216
 PRESETS = {
+    'quality': dict(color_precision=8, layer_difference=12, filter_speckle=20, path_precision=2),
     'balanced': dict(color_precision=7, layer_difference=20, filter_speckle=4, path_precision=2),
     'detail': dict(color_precision=8, layer_difference=10, filter_speckle=2, path_precision=3),
     'light': dict(color_precision=6, layer_difference=32, filter_speckle=10, path_precision=1),
@@ -77,8 +78,14 @@ def clean_alpha(im, role, threshold=12, line_cleanup=False):
     return Image.fromarray(a)
 
 
-def trace_part(im: Image.Image, out: Path, part_id: str, preset: str):
+def trace_part(im: Image.Image, out: Path, part_id: str, preset: str, role='static'):
     """Trace RGB and an 8-bit luminance alpha mask separately (no alpha squaring)."""
+    if preset == 'quality':
+        from .quality_trace import run_quality_trace
+        root = run_quality_trace(im, out, part_id, role)
+        svg = ET.tostring(root, encoding='unicode')
+        write_new(out.parent / 'parts' / f'{part_id}.svg', svg)
+        return svg, sum(1 for _ in root.iter(tag('path')))
     original_width, original_height = im.size
     scale = 3 if max(im.size) <= 256 else 1
     if scale > 1:
@@ -135,15 +142,15 @@ def assemble(project, root_dir: Path):
     return ET.tostring(root, encoding='unicode')
 
 
-def convert_file(source: Path, dest: Path, preset='balanced', line_cleanup=False,
-                 alpha_threshold=12, progress=lambda value, message: None, source_open=False):
+def convert_file(source: Path, dest: Path, preset='quality', line_cleanup=False,
+                 alpha_threshold=12, progress=lambda value, message: None, source_open=False, role_map=None):
     if preset not in PRESETS:
         raise ValueError('未知の変換プリセット')
     dest.mkdir(parents=True, exist_ok=False)
     for d in ['parts', 'originals', 'work']:
         (dest / d).mkdir()
     project = dict(version=1, id=dest.name, name=source.stem, parts=[], warnings=[],
-                   settings=dict(duration=4, sway=1.2, breathe=3, blink=True, talking=False),
+                   settings=dict(duration=4, sway=1.2, breathe=3, blink=True, talking=True),
                    conversion=dict(preset=preset, lineCleanup=line_cleanup, alphaThreshold=alpha_threshold))
     source_layers = []
     if source.suffix.lower() == '.psd':
@@ -195,7 +202,7 @@ def convert_file(source: Path, dest: Path, preset='balanced', line_cleanup=False
     reconstruction = Image.new('RGBA', (width, height))
     for index, (name, image, left, top, visible) in enumerate(source_layers):
         progress(10 + int(index / max(1, len(source_layers)) * 85), f'SVG化 {index+1}/{len(source_layers)}: {name}')
-        role = role_for(name)
+        role = (role_map or {}).get(name, role_for(name))
         cleaned = clean_alpha(image, role, alpha_threshold, line_cleanup)
         box = cleaned.getchannel('A').getbbox()
         if not box:
@@ -205,7 +212,7 @@ def convert_file(source: Path, dest: Path, preset='balanced', line_cleanup=False
         x, y = left + box[0], top + box[1]
         image.crop(box).save(dest / 'originals' / f'{pid}.png')
         cropped.save(dest / 'work' / f'{pid}.clean.png')
-        _, paths = trace_part(cropped, dest / 'work', pid, preset)
+        _, paths = trace_part(cropped, dest / 'work', pid, preset, role)
         if visible:
             reconstruction.alpha_composite(cropped, (x, y))
         project['parts'].append(dict(id=pid, name=name, role=role, x=x, y=y, width=cropped.width,
@@ -219,6 +226,10 @@ def convert_file(source: Path, dest: Path, preset='balanced', line_cleanup=False
         raise ValueError('変換できるピクセルレイヤーがありません')
     reconstruction.save(dest / 'reconstructed.png')
     project['warnings'] = list(dict.fromkeys(project['warnings']))
+    if preset == 'quality':
+        from .quality_trace import PROFILE
+        project['conversion']['traceProfile'] = PROFILE
+        project['settings']['renderSource'] = 'svg'
     write_new(dest / 'project.json', json.dumps(project, ensure_ascii=False, indent=2))
     write_new(dest / 'assembled.svg', assemble(project, dest))
     progress(100, f"完了: {len(project['parts'])} パーツ")

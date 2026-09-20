@@ -1,0 +1,18 @@
+export function installRuntimeCharacters({sid}){
+ const host=document.createElement('details');host.id='runtimeCharacters';host.className='preparation-section';
+ host.innerHTML='<summary>キャラクターの切り替え</summary><label>キャラクター<select data-character></select></label><label>演出<select data-preset></select></label><button data-switch class="wide">このキャラクターと演出に切り替える</button><label>保存したキャラクター<select data-saved></select></label><button data-add class="wide">キャラクターを追加</button><label>プロジェクトファイルから追加<input data-file type="file" accept=".json"></label><p data-status class="tiny" role="status"></p>';
+ document.getElementById('backgroundSettings')?.before(host);if(!host.isConnected)document.getElementById('controls').append(host);
+ const $=k=>host.querySelector('[data-'+k+']'),base='/api/runtime/sessions/'+sid+'/characters';let rows=[],busy=false,active='';
+ async function request(url,body){const r=await fetch(url,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{}),data=await r.json();if(!r.ok)throw Error(typeof data.detail==='string'?data.detail:'キャラクターを確認してください');return data;}
+ const status=t=>$('status').textContent=t;
+ function presets(){const old=$('preset').value;$('preset').replaceChildren(...(rows.find(r=>r.id===$('character').value)?.actions||[]).map(a=>new Option(a.name,a.id)));if([...$('preset').options].some(o=>o.value===old))$('preset').value=old;else $('preset').value='0'.repeat(31)+'1';}
+ async function refresh(){const data=await request(base),selected=$('character').value;rows=data.characters;active=data.active;$('character').replaceChildren(...rows.map(r=>new Option(r.name+(r.active?'（表示中）':''),r.id)));$('character').value=rows.some(r=>r.id===selected)?selected:active;presets();}
+ async function work(fn){if(busy)return;busy=true;for(const e of host.querySelectorAll('button,input'))e.disabled=true;try{await fn();}catch(e){status(e.message);}finally{busy=false;for(const e of host.querySelectorAll('button,input'))e.disabled=false;}}
+ $('character').onchange=presets;
+ $('switch').onclick=()=>void work(async()=>{const id=crypto.randomUUID();status('キャラクターを準備しています…');await request(base+'/switch',{request_id:id,character_id:$('character').value,preset_id:$('preset').value});for(let i=0;i<120;i++){await new Promise(r=>setTimeout(r,500));const result=await request(base+'/result/'+id);if(result.status==='completed'){await refresh();status('切り替えました');return;}if(result.status!=='loading')throw Error(result.error||'別の切り替えに置き換わりました');}throw Error('切り替え結果を確認できませんでした');});
+ async function add(project,label){const result=await request(base,{project,...(label?{label}: {})});await refresh();$('character').value=result.added_id;presets();status('追加しました。ホットキー設定でも選べます。');}
+ $('add').onclick=()=>void work(async()=>{if(!$('saved').value)return;await add(await request($('saved').value));});
+ $('file').onchange=()=>void work(async()=>{const file=$('file').files[0];if(!file)return;if(file.size>100*1024**2)throw Error('プロジェクトは100MB以下にしてください');await add(JSON.parse(await file.text()),file.name.replace(/(?:\.project)?\.json$/i,''));$('file').value='';});
+ void work(async()=>{await refresh();const entries=await request('/api/projects');$('saved').replaceChildren(new Option('保存したキャラクターを選ぶ',''),...entries.map(p=>new Option(p.name,'/api/projects/'+p.id)));try{const saved=JSON.parse(localStorage.getItem('svg-through.saved-characters.v1')||'[]');for(const p of saved)if(p.url?.startsWith('/api/'))$('saved').add(new Option(p.name,p.url));}catch{}});
+ return {update(id){if(id&&id!==active)void refresh().catch(e=>status(e.message));},close(){host.remove();}};
+}

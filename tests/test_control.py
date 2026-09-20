@@ -9,6 +9,32 @@ from studio import control, server
 
 
 class ControlTests(unittest.TestCase):
+    def test_mouth_stable_playback_modes_are_validated(self):
+        for mode in ['stable', 'svg-frames-raw', 'svg-frames', 'grid']:
+            self.assertEqual(control.Command(action='settings', settings={'rifeMouthMode': mode}).settings['rifeMouthMode'], mode)
+        with self.assertRaises(ValueError):
+            control.Command(action='settings', settings={'rifeEyesMode': 'stable'})
+
+    def test_motion_links_command_validation(self):
+        control.Command(action='motion_links', motion_links={'operation':'link','source_id':'p008','part_ids':['p006'],'mode':'attachment'})
+        control.Command(action='motion_links', motion_links={'operation':'inspect'})
+        control.Command(action='motion_links', motion_links={'operation':'link','source_id':'p008','part_ids':['p006'],'expected':{'p006':None}})
+        for command in [{}, {'operation':'link'}, {'operation':'link','source_id':'p008','part_ids':['bad']}, {'operation':'link','source_id':'p008','part_ids':['p006','p006']}, {'operation':'unlink','source_id':'p008','part_ids':['p006'],'expected':{} }]:
+            with self.assertRaises(ValueError):
+                control.Command(action='motion_links',motion_links=command)
+
+    def test_chest_region_is_available_and_validated_in_both_settings_paths(self):
+        values={'chestRegionManual': True, 'chestCenterX': .52, 'chestCenterY': .4,
+                'chestRadiusX': .1, 'chestRadiusY': .08}
+        self.assertEqual(control.validate_motion_settings(values), values)
+        self.assertEqual(control.Command(action='settings', settings=values).settings, values)
+        for values in ({'chestRegionManual': 1}, {'chestCenterX': 1.1}, {'chestCenterY': float('nan')},
+                       {'chestRadiusX': 0}, {'chestRadiusY': .51}, {'chestRadiusX': True}):
+            for validate in (control.validate_motion_settings,
+                             lambda v: control.Command(action='settings', settings=v)):
+                with self.assertRaises(ValueError):
+                    validate(values)
+
     def test_upward_ear_pattern_is_accepted_by_both_settings_paths(self):
         settings={'earPattern':'up','ears':20,'earCycles':3}
         self.assertEqual(control.validate_motion_settings(settings),settings)
@@ -63,6 +89,14 @@ class ControlTests(unittest.TestCase):
                 self.assertEqual(self.client.post('/api/control/commands', json=command).status_code, 422)
         self.assertEqual(self.client.post('/api/control/commands', json={'action': 'play'}, headers={'origin': 'https://evil.test'}).status_code, 403)
 
+    def test_hair_follow_schema_rejects_retired_clothing_modes(self):
+        from studio.control import MotionLinksCommand
+        waist = dict(enabled=True, x=400, y=600, transition=40, amount=3, flutter=0)
+        self.assertEqual(MotionLinksCommand(operation='link', source_id='p001', part_ids=['p009'], mode='rigid', anchor={'x': 100, 'y': 50}).mode, 'rigid')
+        for kwargs in [dict(operation='configure', source_id='p008'), dict(operation='configure', source_id='p008', waist_motion={**waist, 'amount': 9}), dict(operation='link', source_id='p001', part_ids=['p009'], mode='mesh'), dict(operation='link', source_id='p001', part_ids=['p009'], anchor={'x': -1, 'y': 0})]:
+            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                MotionLinksCommand(**kwargs)
+
     def test_command_result_stop_and_busy(self):
         with self.client.websocket_connect('/api/control/socket/editor', headers=self.origin) as ws:
             accepted = self.client.post('/api/control/commands', json={'action': 'play'})
@@ -113,3 +147,27 @@ class ControlTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class MotionRegionValidationTests(unittest.TestCase):
+    def test_brush_setting_is_bounded(self):
+        from studio.control import validate_motion_settings
+        r={'cx':.5,'cy':.5,'rx':.2,'ry':.1,'mask':[0]*4096}
+        self.assertEqual(validate_motion_settings({'chestMotionRegion':r})['chestMotionRegion'],r)
+        for invalid in ({**r,'mask':[0]}, {**r,'cx':2}, {**r,'mask':[True]*4096}):
+            with self.assertRaises(ValueError):validate_motion_settings({'chestMotionRegion':invalid})
+
+
+class HeadMotionCommandTests(unittest.TestCase):
+    def test_head_motion_contract(self):
+        from studio.control import Command
+        self.assertEqual(Command(action='head_motion',head_motion={'operation':'update','part_ids':['p001'],'tuning':{'amount':.5,'depth':1.2}}).head_motion.tuning.depth,1.2)
+        for cmd in ({'operation':'update','tuning':{'amount':.5,'depth':1}}, {'operation':'update','part_ids':['p001'],'tuning':{'amount':2,'depth':1}}, {'operation':'update','neck_blend':0}):
+            with self.assertRaises(ValueError):Command(action='head_motion',head_motion=cmd)
+
+    def test_face_angles_settings(self):
+        from studio.control import Command
+        values={'headYawOffset':-.7,'headRollOffset':4,'headPitch':.5,'headIdle':False}
+        self.assertEqual(Command(action='settings',settings=values).settings,values)
+        for values in ({'headYawOffset':2},{'headRollOffset':9},{'headIdle':1}):
+            with self.assertRaises(ValueError):Command(action='settings',settings=values)

@@ -3,9 +3,45 @@ import numpy as np
 from PIL import Image,ImageDraw
 from psd_tools import PSDImage
 from psd_tools.api.layers import PixelLayer
-from studio.segmented import split_motion_layers,motion_image
+from studio.segmented import split_motion_layers,motion_image,motion_group
 
 class SegmentedTests(unittest.TestCase):
+    def test_legwear_and_footwear_stay_separate_with_psd_order_and_alpha(self):
+        for garment_order in [('legwear','bottomwear','footwear'),('footwear','bottomwear','legwear')]:
+            with self.subTest(order=garment_order):
+                psd=PSDImage.new('RGBA',(80,80))
+                PixelLayer.frompil(Image.new('RGBA',(20,60),'blue'),psd,name='topwear',left=30,top=10)
+                colors={'legwear':(220,160,120,96),'bottomwear':(255,160,0,255),'footwear':(120,30,80,255)}
+                for name in garment_order:
+                    PixelLayer.frompil(Image.new('RGBA',(30,30),colors[name]),psd,name=name,left=25,top=40)
+                source=psd.composite(force=True).convert('RGBA');choices={}
+                leading,trailing,meta,_=split_motion_layers(np.array(source),list(psd.descendants()),source_options=choices)
+                garments=[(name,im) for name,_,im in leading if meta[name].get('sourceLayerName') in colors]
+                self.assertEqual([meta[name]['sourceLayerName'] for name,_ in garments],list(garment_order))
+                for name,im in garments:
+                    key=meta[name]['sourceLayerName']
+                    self.assertTrue(meta[name]['independentAccessory'])
+                    self.assertEqual(meta[name]['deformGroup'],key)
+                    np.testing.assert_allclose(im.getpixel((35,45)),colors[key],atol=2)
+                    self.assertEqual(choices[name]['psd'].getpixel((35,45)),im.getpixel((35,45)))
+                core=next(im for name,_,im in leading if name.startswith('元画像（胴体'))
+                self.assertEqual(core.getpixel((35,45)),(0,0,255,255)) # No baked stocking, including alpha < 128.
+                self.assertEqual(core.getpixel((26,45))[3],0) # No garment-only pixels remain in body.
+                merged=Image.new('RGBA',(80,80))
+                for _,_,im in leading+trailing:merged.alpha_composite(im)
+                actual=np.array(merged);expected=np.array(source)
+                np.testing.assert_array_equal(actual[:,:,3],expected[:,:,3])
+                np.testing.assert_allclose(actual[expected[:,:,3]>0].astype(int),expected[expected[:,:,3]>0].astype(int),atol=2)
+
+    def test_hidden_legwear_stays_hidden_and_common_names_are_classified(self):
+        for name in ('legwear','legwear-l','legwear_r',' LEGWEAR '):
+            self.assertEqual(motion_group(name),'legwear')
+        psd=PSDImage.new('RGBA',(40,40))
+        PixelLayer.frompil(Image.new('RGBA',(40,40),'blue'),psd,name='topwear')
+        layer=PixelLayer.frompil(Image.new('RGBA',(20,20),'red'),psd,name='legwear');layer.visible=False
+        _,_,meta,_=split_motion_layers(np.array(psd.composite(force=True)),list(psd.descendants()))
+        self.assertFalse(any(m.get('sourceLayerName')=='legwear' for m in meta.values()))
+
     def test_combined_earwear_gets_independent_left_and_right_roots(self):
         psd=PSDImage.new('RGBA',(100,100))
         PixelLayer.frompil(Image.new('RGBA',(30,50),'blue'),psd,name='topwear',left=35,top=30)

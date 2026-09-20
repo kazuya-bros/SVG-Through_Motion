@@ -1,5 +1,6 @@
 import {eyeCapabilities,mouthCapabilities} from './shape-capabilities.js';
 import {EDIT_EYE_BLEND,EDIT_MOUTH_BLEND} from './work-area.js';
+import {aiCorrectionUiVisible} from './ui-flags.js';
 export function installShapeGuide(changed,project,requestAssist=()=>{},showAssistResults=()=>{},assistSessionFor=()=>null){
  const $=id=>document.getElementById(id),poses=new Map();
  for(const [step,noun,input,closed,blend] of [['eyes','目','editEyeClosure',1,EDIT_EYE_BLEND],['mouth','口','mouth',0,EDIT_MOUTH_BLEND]]){
@@ -15,19 +16,29 @@ export function installShapeGuide(changed,project,requestAssist=()=>{},showAssis
   const thicknessOut=document.createElement('output');thicknessOut.id=thickness.id+'Out';thicknessOut.value=Math.round(+thickness.value*100)+'%';thickness.before(thicknessOut);
   thickness.addEventListener('input',()=>thicknessOut.value=Math.round(+thickness.value*100)+'%');
   card.querySelector('.shape-tools').after(thicknessLabel);
+  if(eye)thicknessLabel.after($('lashStyleControls'));
   if(!eye)thicknessLabel.after($('mouthHighlightLabel'));
+  if(!eye){
+   const details=document.createElement('section');details.id='closedMouthStyle';thicknessLabel.after(details);
+   for(const [key,label] of [['taper','端の先細り'],['curve','カーブ'],['left','左の口角'],['right','右の口角']]){
+    const input=$('mouthEdit-'+key),row=$('mouthField-'+key);input.type='range';row.className='slider-label';row.firstChild.textContent=label+' ';
+    const out=document.createElement('output');input.before(out);const update=()=>out.value=key==='taper'?Math.round(+input.value*100)+'%':input.value;input.addEventListener('input',update);update();details.append(row);
+   }
+   details.append($('closedInkLabel'));
+  }
 
   const undoButton=card.querySelector('[data-undo]'),redoButton=card.querySelector('[data-redo]'),blendButton=card.querySelector('[data-pose=blend]');
   const startEdit=()=>{if($(step+'AdjustDonor').getAttribute('aria-pressed')!=='true')$(step+'AdjustDonor').click();else pose('blend');tool(document.body.dataset.shapeTool||'transform');};
   card.querySelector('[data-start]').onclick=startEdit;
   const ai=document.createElement('button');ai.type='button';ai.dataset.assistShape=step;ai.textContent='AIに任せる';ai.setAttribute('aria-label',`閉じ${noun}をAIに任せる`);ai.onclick=()=>assistSessionFor(step)?showAssistResults(step):requestAssist(step);card.querySelector('[data-start]').after(ai);
+  ai.hidden=!aiCorrectionUiVisible;
   undoButton.onclick=()=>$(eye?'eyeUndo':'mouthUndo').click();
   redoButton.onclick=()=>$(eye?'eyeRedo':'mouthRedo').click();
   document.addEventListener('shapeeditrequest',e=>{if(e.detail?.step===step)startEdit();});
   const preview=document.createElement('section');preview.id=step+'PreviewControl';preview.className='shape-stage-preview';preview.dataset.previewStep=step;
   preview.innerHTML=`<p>${eye?'スライダーを往復して、瞬きを確認':'スライダーを往復して、口の開閉を確認'}</p><div class="stage-slider"></div><p class="pose-help" aria-live="polite"></p>`;
   $('stage').parentElement.querySelector('.statusbar').before(preview);
-  preview.querySelector('.stage-slider').before(card.querySelector('.shape-history'));
+  preview.querySelector('.pose-help').after(card.querySelector('.shape-history'));
   preview.querySelector('.stage-slider').after(card.querySelector('.shape-view'));
   const slider=$(input).closest('.slider-label');preview.querySelector('.stage-slider').append(slider);
   slider.firstChild.textContent=eye?'目の閉じ具合 ':'口の開き ';
@@ -39,7 +50,7 @@ export function installShapeGuide(changed,project,requestAssist=()=>{},showAssis
    $(input).style.setProperty('--shape-progress',Math.round(v*100)+'%');
    preview.querySelector('.pose-help').textContent=editing?(editable?'補正中：画面上の枠や丸をドラッグできます。':'開閉を確認中。「開いた形と重ねる」で編集に戻れます。'):'開閉を確認。気になる目・口は画面でクリックして編集できます。';
    blendButton.disabled=Math.abs(v-blend)<.005;blendButton.setAttribute('aria-pressed',String(blendButton.disabled));
-   ai.hidden=editing;preview.querySelector('.shape-history').hidden=preview.querySelector('.shape-view').hidden=!editing;
+   ai.hidden=!aiCorrectionUiVisible || editing;preview.querySelector('.shape-history').hidden=preview.querySelector('.shape-view').hidden=!editing;
    const part=eye?project()?.parts.find(p=>p.role==='lash-'+$('lidSide').value):project()?.parts.find(p=>p.role==='mouth'&&p.mouthMode==='source-open'&&!p.openSvgText);
    const caps=eye?eyeCapabilities(part):mouthCapabilities(part),curve=card.querySelector('[data-tool=contour]');
    curve.disabled=curve.hidden=!caps.curve;
@@ -62,7 +73,7 @@ export function installShapeGuide(changed,project,requestAssist=()=>{},showAssis
  return {
   pose(step,mode){document.body.dataset[step+'Stage']='closed';poses.get(step)?.(mode);},
   refresh(){for(const step of ['eyes','mouth'])$(step==='eyes'?'editEyeClosure':'mouth').dispatchEvent(new Event('input',{bubbles:true}));},
-  begin(step){if(step==='parts')return;document.body.dataset[step+'Stage']='open';document.body.dataset.shapeTool='transform';$(step+'Guide').querySelectorAll('[data-fix]').forEach(n=>{n.classList.remove('active');n.setAttribute('aria-pressed','false');});document.querySelectorAll('[data-tool]').forEach(n=>n.classList.toggle('active',n.dataset.tool==='transform'));},
+  begin(step){if(step==='parts')return;document.body.dataset[step+'Stage']='open';document.body.dataset.shapeTool='transform';$(step+'Guide').querySelectorAll('[data-fix]').forEach(n=>{n.classList.remove('active');n.setAttribute('aria-pressed','false');});$(step+'Guide').querySelector('[data-tool=transform]').click();},
   reset(){document.body.dataset.eyesStage=document.body.dataset.mouthStage='open';}
  };
 }

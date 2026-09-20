@@ -37,6 +37,10 @@ pool = ThreadPoolExecutor(max_workers=1)
 jobs = {}
 lock = threading.Lock()
 app = FastAPI(title='SVG-Through Motion', docs_url='/api/docs')
+from .project_saves import router as project_saves_router
+app.include_router(project_saves_router)
+from .rife_morph import router as rife_morph_router
+app.include_router(rife_morph_router)
 from .materials import router as materials_router
 app.include_router(materials_router)
 from .material_inference import router as material_inference_router
@@ -51,8 +55,16 @@ from .assist import router as assist_router
 app.include_router(assist_router)
 from .runtime import router as runtime_router
 app.include_router(runtime_router)
+from .runtime_effects import router as effects_router
+app.include_router(effects_router)
+from .avatar_actions import router as avatar_actions_router
+app.include_router(avatar_actions_router)
+from .performance import router as performance_router
+app.include_router(performance_router)
 from .desktop import router as desktop_router
 app.include_router(desktop_router)
+from .agent import router as agent_router
+app.include_router(agent_router)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', '[::1]', 'testserver'])
 
 
@@ -304,18 +316,18 @@ def job(jid: str):
 
 
 @app.post('/api/import/sample')
-def import_sample(preset: str = Form('balanced'), cleanup: bool = Form(False), alpha: int = Form(12)):
+def import_sample(preset: str = Form('quality'), cleanup: bool = Form(False), alpha: int = Form(12)):
     raise HTTPException(422, '旧サンプルは閉じ口です。目と口が開いた元画像と対応するPSDを読み込んでください。')
 
 
 @app.post('/api/import/hybrid/sample')
-def import_hybrid_sample(preset: str = Form('balanced'), cleanup: bool = Form(True), alpha: int = Form(12), motion_parts: bool = Form(False), open_features: bool = Form(False)):
+def import_hybrid_sample(preset: str = Form('quality'), cleanup: bool = Form(True), alpha: int = Form(12), motion_parts: bool = Form(False), open_features: bool = Form(False)):
     raise HTTPException(422, '旧サンプルは閉じ口です。目と口が開いた元画像と対応するPSDを読み込んでください。')
 
 
 @app.post('/api/import/hybrid')
 async def import_hybrid_files(psd: UploadFile = File(...), original: UploadFile = File(...), depth_psd: UploadFile | None = File(None),
-                              preset: str = Form('balanced'), cleanup: bool = Form(True), alpha: int = Form(12), motion_parts: bool = Form(False), open_features: bool = Form(False),
+                              preset: str = Form('quality'), cleanup: bool = Form(True), alpha: int = Form(12), motion_parts: bool = Form(False), open_features: bool = Form(False),
                               eyes_closed: UploadFile | None = File(None), mouth_closed: UploadFile | None = File(None),
                               mouth_a: UploadFile | None = File(None), mouth_i: UploadFile | None = File(None), mouth_u: UploadFile | None = File(None),
                               mouth_e: UploadFile | None = File(None), mouth_o: UploadFile | None = File(None), defer: bool=Form(False), assist_wish: str=Form(''), assist_generation: bool=Form(False)):
@@ -351,7 +363,7 @@ async def import_hybrid_files(psd: UploadFile = File(...), original: UploadFile 
 
 
 @app.post('/api/import')
-async def import_file(file: UploadFile = File(...), preset: str = Form('balanced'),
+async def import_file(file: UploadFile = File(...), preset: str = Form('quality'),
                       cleanup: bool = Form(False), alpha: int = Form(12), open_features: bool = Form(False)):
     extension = Path(file.filename or '').suffix.lower()
     if extension not in ('.psd', '.png', '.jpg', '.jpeg', '.webp'):
@@ -510,3 +522,6 @@ def index():
 
 app.mount('/assets', StaticFiles(directory=PROJECTS), name='assets')
 app.mount('/web', StaticFiles(directory=ROOT / 'web'), name='web')
+
+from .runtime_characters import router as characters_router
+app.include_router(characters_router)

@@ -1,13 +1,16 @@
-import {secondaryKind,secondaryMesh,secondaryPoint} from './secondary-motion.js';
+import {tailEnabled} from './accessory-targets.js';
+import {headKind,headTuning,coordinatedHeadPoint} from './head-coordination.js';
+import {secondaryKind,secondaryMesh,secondaryPoint,secondarySource} from './secondary-motion.js';
 import {normalizeDepth,depthHairPoint} from './depth-motion.js';
 import {earDeformPart,naturalEarPoint} from './natural-ears.js';
 import {earEnabled} from './idle-expression.js';
 import {attachmentOwner,attachmentOffset} from './attachments.js';
+import {partMotion} from './part-motion.js';
 // One continuous deformation field for preview, frame exports, and vector meshes.
 import {normalizedSpring,rootedWave} from './pachipaku-motion.js?v=voice-2';
 import {blendStrands} from './hair-strands.js';
-import {chestPoint} from './chest-motion.js';
-import {facePart,faceGroup,faceWeight,jawGroup,jawPoint,faceXYPoint,featureParallax} from './face-rig.js';
+import {chestPoint,chestRegion} from './chest-motion.js';
+import {facePart,faceGroup,faceWeight,jawGroup,jawPoint,faceXYPoint,featureParallax,headAttachment,headAttachmentPoint} from './face-rig.js';
 const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,Number.isFinite(+v)?+v:a));
 const smooth=v=>{v=clamp(v);return v*v*(3-2*v);};
 const rad=Math.PI/180;
@@ -26,28 +29,30 @@ export function normalizeRig(r={},p) {
 const groupsCache=new WeakMap();
 export function rigGroups(p) {
   if(p.renderGroup||p.deformGroup)return null;
-  const localEars=p.parts.some(v=>v.visible&&(earEnabled(v)||v.role==='tail'||secondaryKind(v)||v.followPart||v.attachmentDepth));
+  const localEars=p.settings?.faceCoordination||p.parts.some(v=>v.visible&&((headAttachment(v)&&!['front','back'].includes(v.deformGroup))||earEnabled(v)||tailEnabled(v)||secondaryKind(v)||v.followPart||v.motionLink||v.attachmentDepth));
   if(!localEars&&(!p.rig?.segmented||(p.rig.seamWeights&&!p.settings?.independentHair)||p.rig.seamPending))return null;
-  const key=p.parts.map(x=>x.id+':'+(x.deformGroup||'core')+':'+x.role+':'+x.visible+':'+facePart(x)+':'+earEnabled(x)+':'+!!x.faceBase+':'+(x.followPart||'')+':'+(x.attachmentDepth||0)).join('|');
+  const coordinated=!!p.settings?.faceCoordination,headKey=part=>coordinated?headKind(part)+JSON.stringify(headTuning(part)):'';
+  const key=coordinated+':'+p.parts.map(x=>x.id+':'+headKey(x)+':'+(x.deformGroup||'core')+':'+x.role+':'+x.visible+':'+headAttachment(x)+':'+secondaryKind(x)+':'+facePart(x)+':'+earEnabled(x)+':'+tailEnabled(x)+':'+!!x.faceBase+':'+(x.followPart||'')+':'+(x.motionLink||'')+':'+(x.motionLinkMode||'')+':'+(x.attachmentDepth||0)).join('|');
   if(groupsCache.get(p)?.key===key)return groupsCache.get(p).groups;
   const groups=[];
   for(const part of p.parts){const kind=part.deformGroup||'core';let last=groups.at(-1);
     if(part.followPart||part.attachmentDepth){
-      const owner=attachmentOwner(part,p.parts),group={...p,renderGroup:true,motionParts:p.parts,parts:[part],deformGroup:owner.deformGroup||'core',attachmentOwner:owner,attachmentPart:part};
-      Object.defineProperty(group,'settings',{get:()=>({...p.settings,background:'transparent'})});Object.defineProperty(group,'rig',{get:()=>p.rig});groups.push(group);continue;
+      const owner=attachmentOwner(part,p.parts),group={...p,renderGroup:true,motionParts:p.motionParts||p.parts,parts:[part],deformGroup:owner.deformGroup||'core',attachmentOwner:owner,attachmentPart:part};
+      Object.defineProperty(group,'settings',{get:()=>({...p.settings,background:'transparent'})});Object.defineProperty(group,'rig',{get:()=>p.rig});Object.defineProperty(group,'rifeMorph',{get:()=>p.rifeMorph});groups.push(group);continue;
     }
     if(last?.attachmentOwner)last=null;
-    if(!last||last.deformGroup!==kind||facePart(last.parts[0])!==facePart(part)||earEnabled(part)||earEnabled(last.parts[0])||secondaryMesh(part)||secondaryMesh(last.parts[0])||!!last.parts[0].faceBase!==!!part.faceBase){last={...p,renderGroup:true,motionParts:p.parts,chestSeparated:p.parts.some(p=>p.visible&&p.role==='chest'),deformGroup:kind,parts:[]};Object.defineProperty(last,'settings',{get:()=>({...p.settings,background:'transparent'})});Object.defineProperty(last,'rig',{get:()=>p.rig});groups.push(last);}
+    if(!last||headKey(last.parts[0])!==headKey(part)||last.deformGroup!==kind||facePart(last.parts[0])!==facePart(part)||headAttachment(last.parts[0])!==headAttachment(part)||tailEnabled(part)||tailEnabled(last.parts[0])||earEnabled(part)||earEnabled(last.parts[0])||part.motionLink||last.parts[0].motionLink||secondaryMesh(part)||secondaryMesh(last.parts[0])||!!last.parts[0].faceBase!==!!part.faceBase){last={...p,renderGroup:true,motionParts:p.motionParts||p.parts,chestSeparated:p.parts.some(p=>p.visible&&p.role==='chest'),deformGroup:kind,parts:[]};Object.defineProperty(last,'settings',{get:()=>({...p.settings,background:'transparent'})});Object.defineProperty(last,'rig',{get:()=>p.rig});Object.defineProperty(last,'rifeMorph',{get:()=>p.rifeMorph});groups.push(last);}
     last.parts.push(part);
   }
   groupsCache.set(p,{key,groups});return groups;
 }
 export const rigActive=(p,s=p.settings)=>!!p.rig&&!!s?.rigEnabled;
 export function rigPose(t,s) {
+  const idle=s.headIdle!==false?1:0;
   const duration=clamp(s.duration,1,30),phase=((t%duration)+duration)%duration/duration*Math.PI*2;
-  return {headRoll:Math.sin(phase)*clamp(s.headTilt,0,8),bodyRoll:Math.sin(phase-.28)*clamp(s.headTilt,0,8)*clamp(s.bodyFollow),
-    yaw:Math.sin(phase+.45)*clamp(s.headYaw,0,1),nod:Math.sin(phase*2)*clamp(s.headNod,0,6),
-    pitch:clamp((s.headPitch||0)+Math.sin(phase)*clamp(s.pitchSway||0),-1,1),
+  return {headRoll:clamp((s.headRollOffset||0)+idle*Math.sin(phase)*clamp(s.headTilt,0,8),-8,8),bodyRoll:idle*Math.sin(phase-.28)*clamp(s.headTilt,0,8)*clamp(s.bodyFollow),
+    yaw:clamp((s.headYawOffset||0)+idle*Math.sin(phase+.45)*clamp(s.headYaw,0,1),-1,1),nod:idle*Math.sin(phase*2)*clamp(s.headNod,0,6),
+    pitch:clamp((s.headPitch||0)+idle*Math.sin(phase)*clamp(s.pitchSway||0),-1,1),
     hairPhase:phase,hairBend:clamp(s.hairBend,0,30)};
 }
 function hairWeight(x,y,p,r) {
@@ -56,7 +61,32 @@ function hairWeight(x,y,p,r) {
   const a=r.hairWeights;
   return (a[iy*n+ix]*(1-fx)+a[iy*n+ix+1]*fx)*(1-fy)+(a[(iy+1)*n+ix]*(1-fx)+a[(iy+1)*n+ix+1]*fx)*fy;
 }
+export function rigidLinkMatrix(p,pose){
+  const part=p.parts[0],owner=(p.motionParts||p.parts).find(v=>v.id===part.motionLink);
+  if(!owner)return [1,0,0,1,0,0];
+  const attached=part.motionLinkMode==='attachment',base=attached?owner:part;
+  const at=part.motionLinkAnchor||{x:base.x+base.width/2,y:base.y+base.height/2};
+  const local={...p,parts:[owner],deformGroup:owner.deformGroup||'core',attachmentOwner:null};
+  // A vertical tangent follows bending hair; the follower itself stays rigid.
+  const sample=(x,y)=>{
+    if(attached){
+      const m=partMotion(owner,pose,local),angle=m.rotation*rad,dx=x-m.pivotX,dy=y-m.pivotY;
+      x=m.pivotX+m.x+dx*Math.cos(angle)-dy*Math.sin(angle);y=m.pivotY+m.y+dx*Math.sin(angle)+dy*Math.cos(angle);
+    }else if(owner.role==='hair'){
+      const pivot=pose.pivotOverrides?.[owner.id]||owner,px=pivot.pivotX??owner.x+owner.width/2,py=pivot.pivotY??owner.y+owner.height*.08;
+      const sign=owner.x+owner.width/2<p.width/2?-1:1,angle=(pose.hairAngle||0)*sign*clamp(owner.motionStrength??1,0,2)*rad,dx=x-px,dy=y-py;
+      x=px+dx*Math.cos(angle)-dy*Math.sin(angle);y=py+dx*Math.sin(angle)+dy*Math.cos(angle);
+    }
+    return warpPoint(x,y,local,pose);
+  };
+  const a=sample(at.x,at.y),b=sample(at.x,at.y+1);
+  const angle=Math.atan2(-(b[0]-a[0]),b[1]-a[1]),c=Math.cos(angle),s=Math.sin(angle);
+  return [c,s,-s,c,a[0]-c*at.x+s*at.y,a[1]-s*at.x-c*at.y];
+}
 export function warpPoint(x,y,p,pose) {
+  if(p.parts.length===1&&p.parts[0].motionLink&&['rigid','attachment'].includes(p.parts[0].motionLinkMode)){
+    const [a,b,c,d,e,f]=rigidLinkMatrix(p,pose);return [a*x+c*y+e,b*x+d*y+f];
+  }
   if(p.attachmentOwner){
     const local={...p,parts:[p.attachmentOwner],attachmentOwner:null},point=warpPoint(x,y,local,pose),offset=attachmentOffset(p.attachmentPart,p,pose);
     return [point[0]+offset[0],point[1]+offset[1]];
@@ -68,12 +98,12 @@ export function warpPoint(x,y,p,pose) {
   if(!rigActive(p))return [x,y];
   [x,y]=depthHairPoint(x,y,p,pose);
   [x,y]=jawPoint(x,y,p,pose);
-  if(p.rig.segmented&&p.rig.seamWeights&&!p.settings?.independentHair&&!p.parts.some(v=>v.role==='tail'||v.independentAccessory)){const [dx,dy]=sharedOffset(x,y,p,pose);return stablePoint(x+dx,y+dy,p,pose);}
+  if(p.rig.segmented&&p.rig.seamWeights&&!p.settings?.independentHair&&!p.parts.some(v=>tailEnabled(v)||v.independentAccessory)){const [dx,dy]=sharedOffset(x,y,p,pose);return stablePoint(x+dx,y+dy,p,pose);}
   if(p.rig.segmented&&p.deformGroup){
     const [dx,dy]=segmentOffset(x,y,p,pose);
     return stablePoint(x+dx,y+dy,p,pose);
   }
-  if(p.settings?.rigMode!=='soft')return stablePoint(x,y,p,pose);
+  if(p.settings?.faceCoordination||p.settings?.rigMode!=='soft')return stablePoint(x,y,p,pose);
   [x,y]=headOrientationPoint(x,y,p,pose);
   const r=p.rig,w=p.width,h=p.height;
   const head=faceGroup(p)?faceWeight(x,y,p):0;
@@ -101,8 +131,9 @@ export function sharedOffset(x,y,p,pose){
   return [dx/Math.max(1,total),dy/Math.max(1,total)];
 }
 // Local face XYZ projection, with neck falloff and separate feature depth.
-export function headOrientationPoint(x,y,p,pose) {return faceXYPoint(x,y,p,pose);}
+export function headOrientationPoint(x,y,p,pose) {return p.parts.length&&p.parts.every(v=>headAttachment(v)===headAttachment(p.parts[0]))&&headAttachment(p.parts[0])?headAttachmentPoint(x,y,p,pose):faceXYPoint(x,y,p,pose);}
 export function stablePoint(x,y,p,pose) {
+  if(p.settings?.faceCoordination){const [ox,oy]=coordinatedHeadPoint(x,y,p,pose),a=clamp(pose.bodyRoll||0,-8,8)*rad,bx=ox-p.rig.neckX,by=oy-p.height*.8;return [p.rig.neckX+bx*Math.cos(a)-by*Math.sin(a),p.height*.8+bx*Math.sin(a)+by*Math.cos(a)];}
   [x,y]=headOrientationPoint(x,y,p,pose);
   const r=p.rig,h=p.height,w=p.width,s=p.settings||{};
   // Face roll follows the upstream restrained range, blending into the neck.
@@ -177,15 +208,18 @@ export function faceMotion(part,p,pose) {
 }
 export function mesh(p,columns=12,rows=18) {
   const result=[];
-  const secondary=p.parts.length===1&&secondaryMesh(p.parts[0])?p.parts[0]:null;
+  if(p.parts.length===1&&['rigid','attachment'].includes(p.parts[0].motionLinkMode)&&p.parts[0].motionLink)return [[[0,0],[p.width,0],[0,p.height]],[[p.width,0],[p.width,p.height],[0,p.height]]];
+  const secondary=p.parts.length===1?secondarySource(p.parts[0],p):null;
   if(secondary){
     // Keep the attachment on mesh edges so interpolation cannot pull the root.
     const xs=[0,p.width,clamp(secondary.pivotX??secondary.x+secondary.width/2,0,p.width)];
     const ys=[0,p.height,clamp(secondary.pivotY??secondary.y,0,p.height)];
-    for(let i=0;i<=16;i++){
-      xs.push(clamp(secondary.x+(secondary.width*i/16),0,p.width));
-      ys.push(clamp(secondary.y+(secondary.height*i/16),0,p.height));
-    }
+    // Cloth bends with height. Extra X subdivisions did not improve that field.
+    const custom=!!secondary.secondaryMotion?.region,cloth=secondaryKind(secondary)==='cloth',steps=custom?32:cloth?8:16;
+    if(custom)for(let i=0;i<=32;i++)xs.push(clamp(secondary.x+secondary.width*i/32,0,p.width));
+    if(!cloth)for(let i=0;i<=16;i++)xs.push(clamp(secondary.x+secondary.width*i/16,0,p.width));
+    else xs.push(clamp(secondary.x,0,p.width),clamp(secondary.x+secondary.width,0,p.width));
+    for(let i=0;i<=steps;i++)ys.push(clamp(secondary.y+secondary.height*i/steps,0,p.height));
     const X=[...new Set(xs)].sort((a,b)=>a-b),Y=[...new Set(ys)].sort((a,b)=>a-b);
     for(let j=0;j<Y.length-1;j++)for(let i=0;i<X.length-1;i++){const a=[X[i],Y[j]],b=[X[i+1],Y[j]],c=[X[i],Y[j+1]],d=[X[i+1],Y[j+1]];result.push([a,b,c],[b,d,c]);}
     return result;
@@ -199,6 +233,7 @@ export function mesh(p,columns=12,rows=18) {
     for(let j=0;j<Y.length-1;j++)for(let i=0;i<X.length-1;i++){const a=[X[i],Y[j]],b=[X[i+1],Y[j]],c=[X[i],Y[j+1]],d=[X[i+1],Y[j+1]];result.push([a,b,c],[b,d,c]);}
     return result;
   }
+  if(p.settings?.chestMotionRegion&&chestRegion(p)){columns=32;rows=32;}
   const levels=Array.from({length:rows+1},(_,y)=>y*p.height/rows);
   if(p.deformGroup&&p.rig&&faceGroup(p)){
     // Two local jaw rows preserve the small speech motion without increasing
@@ -210,15 +245,22 @@ export function mesh(p,columns=12,rows=18) {
     const a=[x*p.width/columns,levels[y]],b=[(x+1)*p.width/columns,a[1]],c=[a[0],levels[y+1]],d=[b[0],c[1]];
     result.push([a,b,c],[b,d,c]);
   }
-  if(p.deformGroup&&!p.parts.some(p=>p.role==='tail')){const parts=p.parts.filter(p=>p.visible);return result.filter(t=>parts.some(p=>Math.max(...t.map(v=>v[0]))>=p.x-24&&Math.min(...t.map(v=>v[0]))<=p.x+p.width+24&&Math.max(...t.map(v=>v[1]))>=p.y-24&&Math.min(...t.map(v=>v[1]))<=p.y+p.height+24));}
+  if(p.deformGroup&&!p.parts.some(p=>tailEnabled(p))){const parts=p.parts.filter(p=>p.visible);return result.filter(t=>parts.some(p=>Math.max(...t.map(v=>v[0]))>=p.x-24&&Math.min(...t.map(v=>v[0]))<=p.x+p.width+24&&Math.max(...t.map(v=>v[1]))>=p.y-24&&Math.min(...t.map(v=>v[1]))<=p.y+p.height+24));}
   return result;
 }
-export function triangleMatrix(t,p,pose) {
-  const q=t.map(([x,y])=>warpPoint(x,y,p,pose));
+export function triangleMatrix(t,p,pose,vertices) {
+  const q=t.map(([x,y])=>{if(!vertices)return warpPoint(x,y,p,pose);const key=x+','+y;if(!vertices.has(key))vertices.set(key,warpPoint(x,y,p,pose));return vertices.get(key);});
   const ux=t[1][0]-t[0][0],uy=t[1][1]-t[0][1],vx=t[2][0]-t[0][0],vy=t[2][1]-t[0][1],det=ux*vy-uy*vx;
   const ex=q[1][0]-q[0][0],ey=q[1][1]-q[0][1],fx=q[2][0]-q[0][0],fy=q[2][1]-q[0][1];
   const a=(ex*vy-fx*uy)/det,b=(ey*vy-fy*uy)/det,c=(fx*ux-ex*vx)/det,d=(fy*ux-ey*vx)/det;
   return [a,b,c,d,q[0][0]-a*t[0][0]-c*t[0][1],q[0][1]-b*t[0][0]-d*t[0][1]];
+}
+// Adjacent or disjoint cells with the same affine map can share one clip/draw.
+// Eight decimals keep the maximum coordinate error below 0.001 px at supported sizes.
+export function deformationBatches(triangles,p,pose){
+  const vertices=new Map(),batches=new Map();
+  triangles.forEach((t,index)=>{const matrix=triangleMatrix(t,p,pose,vertices),key=matrix.map(v=>v.toFixed(8)).join(',');let batch=batches.get(key);if(!batch){batch={matrix,indices:[]};batches.set(key,batch);}batch.indices.push(index);});
+  return [...batches.values()];
 }
 export function decompose([a,b,c,d,e,f]) {
   const sx=Math.hypot(a,b),det=a*d-b*c;

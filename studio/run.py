@@ -85,7 +85,8 @@ def main():
         report_unreachable(url, health)
         print('このポートは使用中です。サーバーの二重起動は行いません。', flush=True)
         return 1
-    server = uvicorn.Server(uvicorn.Config('studio.server:app', host='127.0.0.1', port=args.port, ws_max_size=50*1024**2))
+    from .limits import PROJECT_BYTES
+    server = uvicorn.Server(uvicorn.Config('studio.server:app', host='127.0.0.1', port=args.port, ws_max_size=PROJECT_BYTES))
     if args.open_browser:
         threading.Thread(target=open_when_started,args=(server,url),daemon=True).start()
     server.run()

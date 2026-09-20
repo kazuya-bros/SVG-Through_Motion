@@ -9,9 +9,9 @@ from PIL import Image
 from psd_tools import PSDImage
 from scipy import ndimage
 
-from .convert import MAX_PIXELS, clean_alpha, role_for, trace_part, write_new, assemble
+from .convert import MAX_PIXELS, PRESETS, clean_alpha, role_for, trace_part, write_new, assemble
 from .eyelids import attach_closed_lashes
-from .segmented import split_motion_layers,is_head_accessory,motion_group,motion_image
+from .segmented import split_motion_layers,is_head_accessory,is_eyewear,motion_group,motion_image
 from .artwork_sources import attach_artwork_sources
 from .hair_cleanup import clean_hair_eye_overlap,hair_lash_layers
 from .mouths import attach_closed_mouths
@@ -19,6 +19,7 @@ from .face_donors import read_donors, attach_donors
 from .background import source_background_masks
 from .eye_plate import psd_skin_inputs, blend_eye_skin
 from .depth import read_depth, attach_depth
+from .psd_visibility import require_visible_if_present
 
 
 def spatial_bounds(text):
@@ -46,8 +47,11 @@ def spatial_bounds(text):
     return bounds
 
 
-def convert_hybrid(source, original, dest, preset='balanced', line_cleanup=True,
+def convert_hybrid(source, original, dest, preset='quality', line_cleanup=True,
                    alpha_threshold=12, progress=lambda *_: None, motion_parts=False, source_open=False, face_donors=None, depth_psd=None):
+    if preset not in PRESETS:
+        raise ValueError('未知の変換プリセット')
+    progress(0, '通常PSDを読み込んでいます')
     psd = PSDImage.open(source, max_alloc_bytes=512 * 1024**2)
     with Image.open(original) as im:
         if im.width * im.height > MAX_PIXELS:
@@ -56,12 +60,16 @@ def convert_hybrid(source, original, dest, preset='balanced', line_cleanup=True,
     if original_im.size != (psd.width, psd.height):
         raise ValueError('元画像とPSDは同じキャンバスサイズ・位置にしてください。自動拡縮は行いません。')
     w, h = original_im.size
+    progress(1, '閉じ目・口などの差分PSDを読み込んでいます' if face_donors else '元画像とPSDを確認しています')
     donors = read_donors(face_donors, (w, h), alpha_threshold, line_cleanup)
     leaves = [l for l in psd.descendants() if not l.is_group()]
     if len(leaves) > 100 or w*h > MAX_PIXELS:
         raise ValueError('100レイヤー・16メガピクセル以下にしてください')
     progress(2, '通常PSDとDepth PSDを照合しています' if depth_psd else '通常PSDを確認しています')
     depth_data = read_depth(depth_psd, psd)
+    require_visible_if_present(leaves, lambda layer: role_for(layer.name).startswith('white-'), '通常PSD')
+    if source_open:
+        require_visible_if_present(leaves, lambda layer: role_for(layer.name) == 'mouth', '通常PSD')
     dest.mkdir(parents=True, exist_ok=False)
     for name in ('parts', 'originals', 'work'):
         (dest / name).mkdir()
@@ -186,6 +194,18 @@ def convert_hybrid(source, original, dest, preset='balanced', line_cleanup=True,
             if not accessory_meta[name].get('independentAccessory'):backing.alpha_composite(image)
         layers=[('元画像（顔の下地）','static',backing)]+features+accessories+([('PSDの前髪','static',front_color)] if psd_front else [])
         motion_meta.update({name:accessory_meta[name] for name,_,_ in accessories})
+    # Glasses must sit in front of facial features. Preserve their PSD ordering
+    # relative to the front hair, instead of burying them in the face underpaint.
+    glasses=[layer for layer in layers if is_eyewear(motion_meta.get(layer[0],{}).get('sourceLayerName',''))]
+    if glasses:
+        glass_names={layer[0] for layer in glasses}
+        layers=[layer for layer in layers if layer[0] not in glass_names]
+        positions={layer.name:i for i,layer in enumerate(leaves) if layer.is_visible()}
+        front_position=max((i for i,layer in enumerate(leaves) if layer.is_visible() and motion_group(layer.name)=='front'),default=-1)
+        front_index=next((i for i,layer in enumerate(layers) if layer[0] in ('PSDの前髪','元画像の前髪（顔の手前）') or motion_meta.get(layer[0],{}).get('deformGroup')=='front'),len(layers))
+        behind=[layer for layer in glasses if positions[motion_meta[layer[0]]['sourceLayerName']]<front_position]
+        above=[layer for layer in glasses if layer not in behind]
+        layers=layers[:front_index]+behind+layers[front_index:front_index+1]+above+layers[front_index+1:]
     for side,im in overlays:
         name='髪に重なるまつ毛（'+('左' if side=='l' else '右')+'）'
         layers.append((name,'static',im));motion_meta[name]={'blinkOverlay':side}
@@ -198,7 +218,7 @@ def convert_hybrid(source, original, dest, preset='balanced', line_cleanup=True,
                    backgroundRemoval='psd-protected-hair-gaps-v3',hairGapPixels=int((hair_gaps & ~outer_bg).sum()),frontHairSource='psd' if psd_front else 'original',
                    eyePlateRepair='psd-skin-color-match-v1' if skin_repair.any() else 'unavailable',
                    eyePlateRepairPixels=int(skin_repair.sum())),
-                   settings=dict(duration=4, sway=.3, breathe=1, blink=True, talking=False, background='white',
+                   settings=dict(duration=4, sway=.3, breathe=1, blink=True, talking=True, background='white',
                                  rigEnabled=True, rigMode='stable', headTilt=1.2, headYaw=.15, headNod=.5, bodyFollow=.2, hairBend=3))
     reconstruction = Image.new('RGBA', (w, h))
     for i, (name, role, im) in enumerate(layers):
@@ -209,7 +229,7 @@ def convert_hybrid(source, original, dest, preset='balanced', line_cleanup=True,
         crop = im.crop(box)
         crop.save(dest/'originals'/f'{pid}.png')
         progress(10+int(i/len(layers)*(80 if donors else 85)), f'元画像＋顔パーツ SVG化: {name}')
-        svg_text, paths = trace_part(crop, dest/'work', pid, preset)
+        svg_text, paths = trace_part(crop, dest/'work', pid, preset, role)
         reconstruction.alpha_composite(crop, box[:2])
         project['parts'].append(dict(id=pid, name=name, role=role, x=box[0], y=box[1], width=crop.width,
                                     height=crop.height, visible=True, opacity=1, paths=paths,
@@ -221,6 +241,10 @@ def convert_hybrid(source, original, dest, preset='balanced', line_cleanup=True,
             attach_artwork_sources(project['parts'][-1],source_options[name],dest/'work',preset,crop,svg_text)
     whites = [p for p in project['parts'] if p['role'].startswith('white-')]
     mouths = [p for p in project['parts'] if p['role']=='mouth']
+    face_owner=next((p for p in project['parts'] if p.get('faceBase')),whites[0])
+    for part in project['parts']:
+        if is_eyewear(part.get('sourceLayerName','')):
+            part['followPart']=face_owner['id']
     cx = sum(p['x']+p['width']/2 for p in whites)/len(whites)
     ey = sum(p['y']+p['height']/2 for p in whites)/len(whites)
     my = mouths[0]['y']+mouths[0]['height']/2 if mouths else ey+h*.08
@@ -246,6 +270,10 @@ def convert_hybrid(source, original, dest, preset='balanced', line_cleanup=True,
     attach_closed_mouths(project,dest)
     attach_donors(project, donors, dest, preset, progress)
     attach_depth(project, depth_data)
+    if preset == 'quality':
+        from .quality_trace import PROFILE
+        project['conversion']['traceProfile'] = PROFILE
+        project['settings']['renderSource'] = 'svg'
     reconstruction.save(dest/'reconstructed.png')
     write_new(dest/'project.json', json.dumps(project, ensure_ascii=False, indent=2))
     write_new(dest/'assembled.svg', assemble(project, dest))

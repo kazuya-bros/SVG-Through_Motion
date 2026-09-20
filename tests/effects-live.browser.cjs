@@ -1,0 +1,17 @@
+const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=require('node:fs');
+const base='http://127.0.0.1:18812';
+(async()=>{const browser=await chromium.launch(),page=await browser.newPage({viewport:{width:1540,height:1060}}),errors=[];page.setDefaultTimeout(60000);page.on('pageerror',e=>errors.push(e.message));
+const project=(await(await page.request.get('http://127.0.0.1:18811/api/runtime/sessions/07d63c6946df4eb68c610c0d28128918/project')).json()).project;
+const created=await page.request.post(base+'/api/runtime/sessions',{data:{project,tts:{engine:'browser'}}});assert.equal(created.status(),201);const sid=(await created.json()).session_id;
+await page.goto(base+'/web/effects-editor.html?session='+sid);await page.waitForFunction(()=>!document.querySelector('#effectPreview')?.disabled,{},{timeout:120000});const root=page.locator('#avatarActions');await page.locator('#effectAdd').click();await root.locator('[data-name]').fill('通信中・輪郭ノイズ');
+assert.equal(await root.locator('[data-kind] option[value=image]').count(),0);
+async function action(fn){const wait=page.waitForResponse(r=>r.url().endsWith('/preview')&&r.request().method()==='POST');await fn();const response=await wait;assert.equal(response.status(),202);await page.waitForFunction(()=>!document.querySelector('#effectPreview').disabled);return response.request().postDataJSON();}
+const add=async kind=>{await root.locator('[data-kind]').selectOption(kind);return action(()=>root.locator('[data-add]').click());};
+await add('comms');await add('glitch');const speed=root.locator('[data-editing-component=glitch] input[type=range]').last();
+let sent=0;page.on('request',r=>{if(r.url().endsWith('/preview'))sent++;});
+const updated=await action(()=>speed.evaluate(e=>{for(let i=1;i<=15;i++){e.value=1+i*.1;e.dispatchEvent(new Event('input',{bubbles:true}));}}));assert.equal(updated.action.components.find(c=>c.kind==='glitch').speed,2.5);assert(updated.update_preview_id);assert.equal(sent,1);
+await add('outline');await action(()=>root.locator('[data-look=outline_layers]').selectOption('2'));await action(()=>root.locator('[data-look=outline_color_count]').selectOption('2'));const color=await action(()=>root.locator('[data-look=outline_color2]').fill('#55ccff'));assert.equal(color.action.appearance.outline_color2,'#55ccff');assert.equal(color.action.appearance.outline_layers,2);
+const before=(await(await page.request.get(base+'/api/runtime/sessions/'+sid)).json()).effect;await action(()=>root.locator('[data-look=outline_width]').fill('9'));await page.waitForTimeout(400);const after=(await(await page.request.get(base+'/api/runtime/sessions/'+sid)).json()).effect;assert.equal(after.started_at,before.started_at);
+await action(()=>root.locator('[data-look=outline_layers]').selectOption('3'));await action(()=>root.locator('[data-look=outline_color_count]').selectOption('3'));assert(await root.locator('[data-look=outline_color3]').isVisible());
+await root.locator('[data-name]').scrollIntoViewIfNeeded();await page.screenshot({path:'output/verification/effects-live-editor.png'});await page.locator('#effectStop').click();
+assert.deepEqual(errors,[]);fs.writeFileSync('output/verification/effects-live-browser.json',JSON.stringify({sid,url:page.url(),errors}));console.log('Live sliders, coalescing, preserved timeline, speed, outline variants and hidden image passed',sid);await browser.close();})().catch(e=>{console.error(e);process.exit(1)});

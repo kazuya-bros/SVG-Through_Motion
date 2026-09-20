@@ -10,7 +10,7 @@ export function eyeThroughPasses(project,settings=project.settings){
  const hair=foregroundHairIds(project);if(!hair.size)return null;
  const liveSettings=settings===project.settings;
  const make=kind=>{
-  const pass={...project,eyeThroughPass:true,parts:project.parts.map(p=>{
+  const pass={...project,eyeThroughPass:true,rifeSequencesDisabled:kind!=='base',motionParts:project.motionParts||project.parts,parts:project.parts.map(p=>{
    const part={...p};
    // These passes cache artwork, not the user's live motion settings.
    // The controls replace this object on every input (including initial ON).

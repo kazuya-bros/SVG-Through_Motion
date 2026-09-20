@@ -1,0 +1,13 @@
+const {chromium}=require('playwright'),fs=require('node:fs'),assert=require('node:assert/strict');
+const base=process.env.AVATAR_TEST_URL||'http://127.0.0.1:18811';
+(async()=>{const browser=await chromium.launch(),page=await browser.newPage();await page.goto(base+'/web/effects-editor.css');
+const result=await page.evaluate(async()=>{
+ const project=(await(await fetch('/api/runtime/sessions/07d63c6946df4eb68c610c0d28128918/project')).json()).project;
+ const {prepareCanvasRenderer}=await import('/web/canvas-renderer.js'),{loopPose}=await import('/web/motion.js'),{createFaceTexture,createBroadcastLookRenderer}=await import('/web/broadcast-look-renderer.js'),{defaultLook}=await import('/web/broadcast-look.js');
+ let look=defaultLook();const renderers=[];for(const croppedCompositing of [false,true]){const texture=createFaceTexture();renderers.push(await prepareCanvasRenderer(structuredClone(project),1080,{croppedCompositing,outputPadding:Math.max(project.width,project.height)*.15,texture:(image,part,p)=>texture(image,part,p,look)}));}
+ const timings={};for(const outline of [false,true])for(let n=0;n<2;n++){look={...defaultLook(),outline,emotion:'blush',emotion_strength:.6};const r=renderers[n],fx=createBroadcastLookRenderer(r.canvas),times=[];for(let i=0;i<22;i++){const start=performance.now();r.draw(loopPose(i/30,project.settings));const after=performance.now();fx.draw(look);fx.canvas.getContext('2d').getImageData(0,0,1,1);if(i>=4)times.push([after-start,performance.now()-start]);await new Promise(requestAnimationFrame);}timings[(n?'cropped':'baseline')+(outline?'Outline':'Normal')]=times.reduce((a,v)=>a.map((x,j)=>x+v[j]/times.length),[0,0]);fx.dispose();}
+ const diffs=[];for(const [i,pose]of [0,.2,1,2.5].map(t=>loopPose(t,project.settings)).concat([{mouth:1,blinkL:1,blinkR:1,yaw:.6,pitch:.4,roll:.2},{mouth:0,blinkL:0,blinkR:0,yaw:-.6,pitch:-.4,roll:-.2}]).entries()){
+  look={...defaultLook(),emotion:'blush',emotion_strength:.6};const pixels=renderers.map(r=>{r.draw(pose);return r.canvas.getContext('2d').getImageData(0,0,r.canvas.width,r.canvas.height).data;});let total=0,alphaLost=0,max=0,large=0;for(let k=0;k<pixels[0].length;k++){const d=Math.abs(pixels[0][k]-pixels[1][k]);total+=d;max=Math.max(max,d);if(d>20)large++;if(k%4===3&&pixels[0][k]>100&&pixels[1][k]<10)alphaLost++;}diffs.push({i,mean:total/pixels[0].length,max,large,alphaLost});
+ }
+ renderers.forEach(r=>r.dispose());return {diffs,timings};
+});fs.writeFileSync('output/verification/effects-cropping-performance.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));assert(result.diffs.every(d=>d.alphaLost===0&&d.mean<.6));await browser.close();})().catch(e=>{console.error(e);process.exit(1)});

@@ -51,6 +51,37 @@ class RuntimeTests(unittest.TestCase):
             self.assertEqual(self.state()['state'], 'starting')
             self.assertEqual(self.post(request_id='one', text='x').status_code, 409)
 
+    def test_ai_reception_can_start_with_character(self):
+        self.assertEqual(self.state()['stage']['mode'], 'fixed')
+        body = dict(project={'name':'prepared', 'parts':[{'id':'p000'}]},
+                    tts={'engine':'browser'}, accepting=True, ai_enabled=True)
+        sid = self.client.post('/api/runtime/sessions', json=body).json()['session_id']
+        state = self.client.get('/api/runtime/sessions/'+sid).json()
+        self.assertTrue(state['accepting'])
+        self.assertEqual(state['stage']['mode'], 'ai')
+        self.assertFalse(state['connected'])
+
+    def test_live_voice_change_validates_revision_and_keeps_secrets_private(self):
+        with self.client.websocket_connect(self.base+'/socket/player', headers=self.origin) as ws:
+            self.ready(ws)
+            body = dict(revision=0, tts={'engine':'irodori','base_url':'http://127.0.0.1:8088',
+                                       'api_key':'private-test-key','text':''}, gain=7)
+            response = self.client.put(self.base+'/voice',json=body)
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()['voice_revision'], 1)
+            self.assertEqual(ws.receive_json()['type'], 'voice')
+            self.assertEqual(runtime.get(self.sid).tts['api_key'], 'private-test-key')
+            self.assertNotIn('private-test-key', response.text)
+            self.assertNotIn('private-test-key', self.client.get(self.base+'/project').text)
+            self.assertNotIn('private-test-key', self.client.get(self.base).text)
+            self.assertEqual(self.client.put(self.base+'/voice',json=body).status_code, 409)
+            body['revision']=1;body['tts']['base_url']='https://example.com'
+            self.assertEqual(self.client.put(self.base+'/voice',json=body).status_code, 422)
+            self.assertEqual(self.state()['voice_revision'], 1)
+            self.post(request_id='speaking',text='test');ws.receive_json()
+            body['tts']={'engine':'browser'}
+            self.assertEqual(self.client.put(self.base+'/voice',json=body).status_code,409)
+
     def test_atomic_replace_caption_idempotency_and_stale_result(self):
         with self.client.websocket_connect(self.base + '/socket/player', headers=self.origin) as ws:
             self.ready(ws)

@@ -1,0 +1,21 @@
+const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=require('node:fs');
+const base=process.env.AVATAR_TEST_URL||'http://127.0.0.1:18810',out='output/verification/';
+(async()=>{const browser=await chromium.launch(),page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.setDefaultTimeout(120000);page.on('pageerror',e=>errors.push(e.message));
+const project=(await(await page.request.get('http://127.0.0.1:18808/api/runtime/sessions/a2bdfa359ef74baea13b6c93d651d77f/project')).json()).project;
+await page.goto(base+'/');await page.locator('#startEffects').click();await page.waitForURL('**/?menu=effects');await page.getByRole('heading',{name:'演出を作るキャラクターを選ぶ'}).waitFor();
+await page.screenshot({path:out+'effects-character-selection.png'});
+await page.locator('#useProjectFile').setInputFiles({name:'character.project.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(project))});
+await page.waitForURL('**/effects-editor.html?**');await page.waitForFunction(()=>!document.querySelector('#avatarActions [data-preview]')?.disabled);
+const sid=new URL(page.url()).searchParams.get('session');fs.writeFileSync(out+'effects-editor-session.json',JSON.stringify({sid,url:page.url()}));
+assert.equal(await page.locator('#enterBroadcast,#desktopSettings,#inputSettings,#backgroundSettings').count(),0);
+const root=page.locator('#avatarActions');await root.locator('[data-name]').fill('照れながら笑顔');
+for(const kind of ['expression','blush','outline']){await root.locator('[data-kind]').selectOption(kind);await root.locator('[data-add]').click();}
+await root.locator('.avatar-component').first().locator('select').selectOption('1');await page.locator('[data-look=blush_rotation]').fill('12');await page.locator('[data-look=blush_rotation]').dispatchEvent('input');
+page.once('dialog',d=>d.dismiss());await page.locator('.brand').click();assert(new URL(page.url()).pathname.endsWith('effects-editor.html'));
+await root.locator('[data-preview]').click();await page.waitForTimeout(600);await root.locator('[data-preview]').scrollIntoViewIfNeeded();await page.screenshot({path:out+'effects-dedicated-editor.png'});
+await root.locator('[data-stop]').click();await root.locator('[data-save]').click();await page.waitForFunction(()=>document.querySelector('#avatarActions > [data-status]').textContent.startsWith('保存しました'));
+const id=await root.locator('[data-saved]').inputValue();assert((await(await page.request.get(base+'/api/avatar/presets?project_id='+project.id)).json()).some(r=>r.id===id));
+await page.locator('.brand').click();await page.waitForURL(base+'/');await page.locator('#startEffects').waitFor();await page.screenshot({path:out+'effects-main-menu.png'});
+await page.goto(base+'/web/player.html?session='+sid+'&prepare=1&mode=idle');await page.waitForSelector('#controls:not([hidden])');assert.equal(await page.locator('#avatarEditor,#avatarActions').count(),0);assert(await page.getByText('ホットキー設定',{exact:true}).isVisible());await page.screenshot({path:out+'effects-clean-preparation.png'});
+assert.deepEqual(errors,[]);console.log('Selection -> dedicated editor -> save -> logo; clean preparation passed',sid);fs.writeFileSync(out+'effects-editor-browser.json',JSON.stringify({sid,id,errors}));await browser.close();
+})().catch(e=>{console.error(e);process.exit(1)});

@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {headOrientationPoint,normalizeRig,warpPoint,mesh,triangleMatrix} from '../web/rig.js';
 import {channelValue} from '../web/motion.js';
-import {jawPoint,faceFilterMatrix,faceGroup} from '../web/face-rig.js';
+import {jawPoint,faceFilterMatrix,faceGroup,headAttachmentMatrix} from '../web/face-rig.js';
+import {rigGroups} from '../web/rig.js';
 const p={width:1024,height:1024,parts:[],settings:{rigEnabled:true,independentHair:true}};
 p.rig=normalizeRig({faceX:518,faceY:373,faceWidth:305,neckX:518,neckY:517,segmented:true},p);
 test('face XYZ moves the face base while leaving hair, accessories and neck in place',()=>{
@@ -38,6 +39,24 @@ test('lightweight SVG carries local face XYZ and speech jaw channels',()=>{
   assert.ok(channelValue('svg-face-jaw',{mouth:1},p).value<0);
 });
 const globalFace=p;
+
+test('separate head artwork follows orientation, keeps local hair sway and leaves torso and arms alone',()=>{
+ const parts=[{id:'back',role:'static',deformGroup:'back'},{id:'body',role:'static'},
+  {id:'front',role:'static',deformGroup:'front'},{id:'headwear',role:'static',independentAccessory:true,name:'headwear'},
+  {id:'glasses',role:'glasses'},{id:'ear',role:'ear-l'},{id:'arm',role:'static',deformGroup:'arm-l'}].map(v=>({...v,visible:true,x:200,y:100,width:600,height:800}));
+ const scene={...p,parts,settings:{...p.settings,frontHair:4,backHair:9,armSwing:0}},groups=rigGroups(scene);
+ for(const id of ['back','front','headwear','glasses','ear']){
+  const group=groups.find(g=>g.parts.some(v=>v.id===id));
+  assert.deepEqual(warpPoint(518,300,group,{}),[518,300]);
+  for(const pose of [{yaw:.8},{pitch:.8},{headRoll:6}])assert.ok(Math.hypot(...warpPoint(518,300,group,pose).map((v,i)=>v-[518,300][i]))>1,id);
+  for(const pose of [{yaw:1,pitch:1,headRoll:8},{yaw:-1,pitch:-1,headRoll:-8}]){
+   const m=headAttachmentMatrix(group,pose);assert.ok(m[0]*m[3]-m[1]*m[2]>.99);
+   const q=warpPoint(518,300,group,pose);assert.ok(Math.hypot(q[0]-(m[0]*518+m[2]*300+m[4]),q[1]-(m[1]*518+m[3]*300+m[5]))<1e-8);
+  }
+ }
+ for(const id of ['body','arm'])assert.deepEqual(warpPoint(518,800,groups.find(g=>g.parts.some(v=>v.id===id)),{yaw:1,pitch:1,headRoll:8}),[518,800]);
+ const hair=groups.find(g=>g.deformGroup==='back');assert.notDeepEqual(warpPoint(300,800,hair,{yaw:.5,hairPhase:1}),warpPoint(300,800,hair,{yaw:.5,hairPhase:2}));
+});
 test('speech lowers only the lower face and closes without residual deformation',()=>{
  const p={...globalFace,parts:[{faceBase:true,role:'static',x:360,y:120,width:310,height:355}]};
  const chin=[518,475];

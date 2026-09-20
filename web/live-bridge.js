@@ -12,7 +12,7 @@ export function createLiveBridge({snapshot,state,execute,onStatus}) {
       const project=await snapshot();
       if(socket!==ws||ws.readyState!==WebSocket.OPEN)throw Error('素材反映中に接続が切れました');
       const rev=++revision,payload=JSON.stringify({type:'project',revision:rev,project});
-      if(new TextEncoder().encode(payload).length>50*1024**2)throw Error('AI・OBSへ反映できる素材は50MBまでです');
+      if(new TextEncoder().encode(payload).length>100*1024**2)throw Error('AI・OBSへ反映できる素材は100MBまでです');
       await new Promise((resolve,reject)=>{
         const timer=setTimeout(()=>{pending.delete(rev);reject(Error('素材反映の確認がタイムアウトしました'));},30000);
         pending.set(rev,{resolve:()=>{clearTimeout(timer);pending.delete(rev);resolve();},reject:error=>{clearTimeout(timer);reject(error);}});

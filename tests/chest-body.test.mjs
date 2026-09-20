@@ -1,5 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';
-import {chestRegion,chestPoint,chestFilter} from '../web/chest-motion.js';
+import {chestRegion,chestPoint,chestFilter,chestSettings} from '../web/chest-motion.js';
+import {applyMotionEdit,validateMotion} from '../web/assist-motion.js';
 import {rigGroups,warpPoint,triangleMatrix,mesh} from '../web/rig.js';
 import {loopPose,channelValue} from '../web/motion.js';
 const sample=JSON.parse(fs.readFileSync(new URL('../web/samples/teth/project.json',import.meta.url),'utf8'));
@@ -23,4 +24,28 @@ test('separated chest avoids double movement and SVG carries localized displacem
  assert.equal(chestRegion({...sample,parts:[...sample.parts,{role:'chest',visible:true}]}),null);
  const svg=chestFilter(sample,'chest-local');assert.match(svg,/feDisplacementMap/);assert.match(svg,/data-channel="svg-chest"/);
  assert.equal(channelValue('svg-chest',{chestOffset:24},sample).value,-48);
+});
+
+test('manual region moves the corrected center, stays localized and survives serialization',()=>{
+ const original=chestRegion(sample);
+ const values={chestRegionManual:true,chestCenterX:.55,chestCenterY:.62,chestRadiusX:.12,chestRadiusY:.08};
+ const p=JSON.parse(JSON.stringify(applyMotionEdit(sample,values))),r=chestRegion(p);
+ assert.deepEqual(r,{cx:.55*p.width,cy:.62*p.height,rx:.12*p.width,ry:.08*p.height});
+ const body=rigGroups(p).find(g=>g.parts.some(v=>v.id==='p001'));
+ assert.ok(chestPoint(r.cx,r.cy,body,{chestOffset:40})[1]>r.cy);
+ for(const pt of [[r.cx+r.rx+1,r.cy],[r.cx,r.cy-r.ry-1]])assert.deepEqual(chestPoint(...pt,body,{chestOffset:40}),pt);
+ const filter=decodeURIComponent(chestFilter(p,'corrected'));
+ assert.ok(filter.includes(`cx="${r.cx}" cy="${r.cy}" rx="${r.rx}" ry="${r.ry}"`));
+ assert.deepEqual(chestRegion(applyMotionEdit(p,{chestRegionManual:false})),original);
+ assert.equal(sample.settings.chestRegionManual,undefined);
+});
+
+test('narrow manual regions remain bounded and do not deform face or accessories',()=>{
+ const p=applyMotionEdit(sample,{chestRegionManual:true,chestCenterX:.5,chestCenterY:.65,chestRadiusX:.05,chestRadiusY:.01});
+ const r=chestRegion(p),body=rigGroups(p).find(g=>g.parts.some(v=>v.id==='p001'));
+ assert.ok(chestPoint(r.cx,r.cy,body,{chestOffset:40})[1]-r.cy<=r.ry*.35+.001);
+ for(const triangle of mesh(body)){const [a,b,c,d]=triangleMatrix(triangle,body,{chestOffset:40});assert.ok(a*d-b*c>0);}
+ for(const flag of ['faceBase','independentAccessory'])assert.equal(chestRegion({...p,parts:[{role:'static',visible:true,x:0,y:0,width:p.width,height:p.height,[flag]:true}]}),null);
+ for(const values of [{chestRegionManual:'true'},{chestRadiusX:0},{chestRadiusY:.51},{chestCenterX:NaN},{chestCenterY:-.1}])assert.throws(()=>validateMotion(values));
+ assert.equal(chestSettings({chestRadiusX:NaN}).chestRadiusX,.2);
 });

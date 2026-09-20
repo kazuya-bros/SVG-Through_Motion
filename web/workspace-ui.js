@@ -8,13 +8,13 @@ export function updateSliderTracks(){
  }
 }
 const tasks={
- edit:['01 / 編集','形を整える','目、口の順に形を整えます。'],
+ edit:['01 / 編集','形を整える','目、口を整え、その他の気になるところを調整します。'],
  motion:['02 / モーション','動きをつける','自然な待機をもとに、動きの大きさや速さを調整します。'],
  voice:['音声','音声を合わせる','音声を作るか読み込んで、口パクを確認します。'],
  mic:['キャラクター','マイクで動かす','マイクの声に合わせて口を動かします。'],
  tracking:['キャラクター','カメラで動かす','カメラで瞬きと口の開きを操作。'],
- live:['','キャラクターを動かす','声と背景を設定し、使い方を選んでください。別ウィンドウで操作できます。'],
- export:['03 / 書き出し','素材を書き出す','画像・動画や、他のツールで使う素材を保存します。編集を続けるためのプロジェクト保存もできます。'],
+ live:['','配信の準備','位置・大きさ、声と背景を確認して、配信モードへ進みます。'],
+ export:['03 / 保存','保存','動画やプロジェクトを保存します。'],
 };
 export function installWorkspaceUI(api){
  let active='edit',editStep='eyes';const scrollPositions=new Map(),adjustingSteps=new Set();
@@ -44,7 +44,7 @@ export function installWorkspaceUI(api){
   }
   for(const b of document.querySelectorAll('#liveNav [data-live-page]')){const on=b.dataset.livePage===name;b.classList.toggle('active',on);b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1;}
   const [step,title,description]=tasks[name];$('taskEyebrow').hidden=live;$('taskEyebrow').textContent=step;$('taskTitle').textContent=title;$('taskDescription').textContent=description;
-  $('layerPalette').hidden=name!=='edit';document.body.dataset.task=name;
+  $('layerPalette').hidden=name!=='edit'||editStep!=='parts';document.body.dataset.task=name;
   $('editorGuide').hidden=true;
   if(name==='edit')describeStep();
   updateSliderTracks();
@@ -54,7 +54,7 @@ export function installWorkspaceUI(api){
  right.querySelectorAll(':scope > .task-panel').forEach(p=>scroll.append(p));right.append(scroll);
  const actions=document.createElement('footer');actions.id='workflowActions';actions.className='workflow-actions';
  const editActions=$('editNext').parentElement;actions.append($('editNext'));editActions.remove();
- actions.insertAdjacentHTML('beforeend','<button id="exportTop" class="primary wide" type="button" hidden>次へ：書き出し</button><p id="projectFinishStatus" role="status" hidden></p><button id="projectFinish" class="primary wide" type="button" hidden>プロジェクトを保存して完了</button>');
+ actions.insertAdjacentHTML('beforeend','<button id="exportTop" class="primary wide" type="button" hidden>次へ：保存</button><p id="projectFinishStatus" role="status" hidden></p><button id="projectFinish" class="primary wide" type="button" hidden>プロジェクトを保存して完了</button>');
  right.append(actions);
  $('exportTop').onclick=()=>show('export');
  $('projectFinish').onclick=()=>api.finishProject?.();
@@ -82,16 +82,31 @@ export function installWorkspaceUI(api){
  const shapeGuide=installShapeGuide(()=>describeStep(),api.project,step=>api.requestAssist?.(step),step=>api.showAssistResults?.(step),step=>api.assistSessionFor?.(step));
  function describeStep(){
   document.body.dataset.editStep=editStep;
+  $('layerPalette').hidden=active!=='edit'||editStep!=='parts';
+  $('editNext').textContent=editStep==='eyes'?'次へ：口':editStep==='mouth'?'次へ：その他の調整':'次へ：動きをつける';
   for(const [page,key] of [['eyes','eyeReview'],['mouth','mouthReview']]){const donor=usesClosedDonor(api.project(),page),editing=adjustingSteps.has(page),button=$(page+'AdjustDonor');$(page+'ReviewCard').hidden=false;document.body.dataset[key]=String(!editing);button.setAttribute('aria-pressed',String(editing));$(page+'ReviewCard').querySelector('.shape-source').textContent=donor?'閉じ形：読み込んだPSD':'閉じ形：元の絵から作った下書き';}
   shapeGuide.refresh();
   const [step,title,description]=editGuidance(api.project(),editStep,adjustingSteps.has(editStep),document.body.dataset[editStep+'Stage']==='open');$('taskEyebrow').hidden=editStep==='eyes'||editStep==='mouth';$('taskEyebrow').textContent=step;$('taskTitle').textContent=title;$('taskDescription').textContent=description;
  }
- function editPage(page,force=false){const changed=editStep!==page;if(changed||force){adjustingSteps.delete(page);shapeGuide.begin(page);}editStep=page;show('edit');if(page!=='mouth')api.closeMouth();group('data-edit-page','edit-',page);describeStep();if(changed||force)api.step?.(page);}
- $('editNext').onclick=()=>show('motion');
+ function editPage(page,force=false){
+  if(!['eyes','mouth','parts'].includes(page))return;
+  const changed=editStep!==page;
+  if(changed||force){adjustingSteps.delete(page);shapeGuide.begin(page);}
+  editStep=page;show('edit');if(page!=='mouth')api.closeMouth();
+  group('data-edit-page','edit-',page);describeStep();
+  if(changed||force){
+   api.step?.(page);
+   if(page!=='parts'&&api.project()){
+    api.beginShapeEdit?.(page);adjustingSteps.add(page);shapeGuide.pose(page,page==='eyes'?'closed':'blend');describeStep();
+    $('artboard').dispatchEvent(new Event('workviewchange'));
+   }
+   scroll.scrollTop=0;
+  }
+ }
+ $('editNext').onclick=()=>editStep==='parts'?show('motion'):editPage(editStep==='eyes'?'mouth':'parts');
  const sizeMotionPage=()=>scroll.style.setProperty('--motion-page-height',Math.max(0,scroll.clientHeight-44)+'px');
  new ResizeObserver(sizeMotionPage).observe(scroll);sizeMotionPage();
  document.querySelectorAll('[data-motion-page]').forEach(b=>b.onclick=()=>{sizeMotionPage();group('data-motion-page','motion-',b.dataset.motionPage);scroll.scrollTop=0;});
- document.querySelectorAll('[data-output-page]').forEach(b=>b.onclick=()=>group('data-output-page','output-',b.dataset.outputPage));
  function sourcePage(page){
   for(const key of ['new','resume'])$('source-'+key).hidden=key!==page;
   document.querySelectorAll('[data-source-page]').forEach(b=>{const on=b.dataset.sourcePage===page;b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on));});
@@ -105,14 +120,14 @@ export function installWorkspaceUI(api){
  $('sourceDialog').addEventListener('click',e=>{if(e.target===$('sourceDialog')){const r=e.target.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)e.target.close();}});
  // Advanced technical controls are a secondary route; primary edit actions stay exposed.
  for(const id of ['mouthEditor','eyeEditor','partEditor','microphoneControls']){const node=$(id);if(node){node.open=true;const summary=node.querySelector(':scope > summary');summary.tabIndex=-1;summary.onclick=e=>e.preventDefault();}}
- group('data-edit-page','edit-','eyes');group('data-motion-page','motion-','head');group('data-output-page','output-','image');
+ group('data-edit-page','edit-','eyes');group('data-motion-page','motion-','head');
  show('edit');
- function imported(){
+ function imported(mode='edit'){
   $('projectFinishStatus').textContent='';
   adjustingSteps.clear();api.refreshAssist?.();
   $('vowelOptions').open=false;shapeGuide.reset();
   $('sourceDialog').close();$('startScreen').hidden=true;$('editingWorkspace').hidden=false;document.body.classList.remove('starting');
-  $('editorGuide').hidden=true;api.task?.('edit',null);editPage('eyes',true);
+  $('editorGuide').hidden=true;if(mode==='live'){show('live');}else{api.task?.('edit',null);editPage('eyes',true);}
  }
  if(api.project())imported();
  return {show,editPage,imported,refreshAssist:()=>shapeGuide.refresh(),get active(){return active;}};

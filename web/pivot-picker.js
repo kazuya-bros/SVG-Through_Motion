@@ -1,4 +1,6 @@
 import {warpPoint,normalizeRig} from './rig.js?v=mouth-editor-9';
+import {earEnabled} from './idle-expression.js';
+import {secondaryKind} from './secondary-motion.js';
 const ns='http://www.w3.org/2000/svg';
 export function pivotScreenPoint(point,project,part,pose){
  const owner=part?{...project,deformGroup:part.deformGroup,parts:[part]}:{...project,deformGroup:'core'};
@@ -63,7 +65,8 @@ export function installPivotPicker(api){
    overlay.onkeydown=e=>{if(!e.key.startsWith('Arrow'))return;e.preventDefault();const n=e.shiftKey?10:1;state.point=boundedPivot({x:state.point.x+(e.key==='ArrowRight'?n:e.key==='ArrowLeft'?-n:0),y:state.point.y+(e.key==='ArrowDown'?n:e.key==='ArrowUp'?-n:0)},state.project);refresh();};
   }
   overlay.setAttribute('viewBox',`0 0 ${state.project.width} ${state.project.height}`);
-  Object.assign(overlay.style,{left:surface.offsetLeft+'px',top:surface.offsetTop+'px',width:surface.clientWidth+'px',height:surface.clientHeight+'px'});
+  const fit=Math.min(surface.clientWidth/state.project.width,surface.clientHeight/state.project.height),width=state.project.width*fit,height=state.project.height*fit;
+  Object.assign(overlay.style,{left:surface.offsetLeft+(surface.clientWidth-width)/2+'px',top:surface.offsetTop+(surface.clientHeight-height)/2+'px',width:width+'px',height:height+'px'});
   if(drag){const target=new DOMPoint(drag.x+drag.dx,drag.y+drag.dy).matrixTransform(overlay.getScreenCTM().inverse());state.point=pivotFromScreen(target,state.project,state.parts[0],api.pose());}
   const {x,y}=pivotScreenPoint(state.point,state.project,state.parts[0],api.pose());
   const matrix=overlay.getScreenCTM(),unit=1/Math.max(.01,Math.hypot(matrix.a,matrix.b)),r=8*unit,d=13*unit;
@@ -75,7 +78,7 @@ export function installPivotPicker(api){
  function start(parts,{neck=false}={}){
   finish();const project=api.project();if(!project||(!neck&&!parts.length)||(neck&&!project.rig))return;
   const p=parts[0],arm=project.rig?.arms?.[p?.deformGroup];
-  const point=neck?{x:project.rig.neckX,y:project.rig.neckY}:{x:p.pivotX??arm?.x??p.x+p.width/2,y:p.pivotY??arm?.y??p.y+p.height*.9};
+  const point=neck?{x:project.rig.neckX,y:project.rig.neckY}:{x:p.pivotX??arm?.x??p.x+p.width/2,y:p.pivotY??arm?.y??p.y+p.height*(earEnabled(p)?.9:secondaryKind(p)==='wing'?0:.08)};
   state={project,parts,neck,task:document.body.dataset.task,point:boundedPivot(point,project)};
   bar=document.createElement('div');bar.className='pivot-picker-actions';bar.innerHTML=`<span>${neck?'印を首の付け根に合わせてください':'支点をクリックで移動・ドラッグで調整'}<br><small>ドラッグ・矢印キーで調整できます</small></span><button type="button" class="primary">決定</button><button type="button">キャンセル</button>`;
   bar.querySelectorAll('button')[0].onclick=()=>finish(true);bar.querySelectorAll('button')[1].onclick=()=>finish();stage.append(bar);api.begin();refresh();overlay?.focus();

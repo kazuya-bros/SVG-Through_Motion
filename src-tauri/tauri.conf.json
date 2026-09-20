@@ -6,7 +6,7 @@
   "build": {"frontendDist": "../desktop-ui"},
   "app": {
     "withGlobalTauri": true,
-    "windows": [{"label":"desktop","title":"SVG-Through Motion — アプリ設定","width":960,"height":820,"minWidth":720,"minHeight":580,"additionalBrowserArgs":"--disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows"}],
+    "windows": [{"label":"desktop","title":"SVG-Through Motion — 保存先と接続","visible":false,"width":960,"height":820,"minWidth":720,"minHeight":580,"additionalBrowserArgs":"--disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows"}],
     "security": {"csp":"default-src 'self'; script-src 'self'; style-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' data:"}
   },
   "bundle": {

@@ -72,7 +72,7 @@ body[data-eye-review=true] #eyeEditorMount,body[data-task=edit][data-mouth-revie
 @media(max-width:480px){.import-steps{gap:3px}.import-steps span{font-size:10px}.import-step-actions #importPrevious{min-width:60px}.import-step-actions button{font-size:12px}}
 #sourceContent .import-caution{color:#b04444;line-height:1.8}
 
-.start-actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;max-width:720px;margin:24px auto 12px}
+.start-actions{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;max-width:840px;margin:24px auto 12px}
 .start-actions button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;box-sizing:border-box;width:100%;min-width:0;aspect-ratio:1;padding:16px 10px;border-radius:12px;font-size:14px;line-height:1.65;white-space:normal}
 .start-actions button>svg{width:34px;height:34px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .start-actions button>span{display:block}
@@ -85,7 +85,10 @@ body[data-eye-review=true] #eyeEditorMount,body[data-task=edit][data-mouth-revie
  .start-screen:has(>#startLanding:not([hidden])){padding-top:20px;padding-bottom:20px}
  #startLanding .start-headline{margin-top:0;margin-bottom:12px}
  #startLanding .start-process{margin-top:12px;margin-bottom:14px}
- #startLanding .start-actions{max-width:672px;margin-top:18px}
+ #startLanding .start-actions{max-width:840px;margin-top:18px}
  #startLanding .start-example{margin-top:20px;margin-bottom:0;padding:18px}
  #startLanding .example-cards{--example-image-height:180px}
 }
+
+#startUseHost .saved-thumbnail{display:block;width:360px;height:auto;aspect-ratio:12/13;max-width:100%;margin:20px auto 12px}
+#savedCharacterInfo{text-align:center}

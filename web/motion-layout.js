@@ -14,9 +14,9 @@ export function installMotionLayout(){
  face.prepend(expressions,faceControls);
  body.append(general,$('chestMotionControls'),...extra.children);
  extra.append($('earsAccessoryControls'),$('tailMotionControls'));
- $('earsAccessoryControls').open=true;
+ $('singleBounce').closest('section').hidden=true;
  nav.replaceChildren();
- for(const [key,label] of [['head','身体'],['iris','顔・瞳'],['hair','髪・腕'],['clothes','服・小物'],['extra','耳・尻尾・翼'],['expressions','表情・確認']]){
+ for(const [key,label] of [['head','身体'],['iris','顔・瞳'],['hair','髪・腕'],['clothes','服・小物'],['extra','耳・尻尾・翼'],['expressions','表情']]){
   const button=document.createElement('button');button.dataset.motionPage=key;button.textContent=label;nav.append(button);
  }
  return {body,face,hair,clothes,extra};

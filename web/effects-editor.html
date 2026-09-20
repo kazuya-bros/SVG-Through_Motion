@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SVG-Through Motion — 演出を作る</title>
+<link rel="stylesheet" href="/web/player-base.css"><link rel="stylesheet" href="/web/player-preparation.css"><link rel="stylesheet" href="/web/effects-editor.css"></head>
+<body class="preparing" data-page="effects-editor"><header id="preparationHeader"><a class="brand" href="/" title="メインメニューへ" aria-label="SVG-Through Motion：メインメニューへ"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>SVG-Through Motion<small>パーツを整え、キャラクターを動かす。</small></span></a><span id="preparationName"></span></header>
+<aside id="effectLibrary" aria-label="演出リスト"><header><h2>演出リスト</h2><div class="library-actions"><button id="effectAdd">＋ Add</button><button id="effectDelete">Delete</button></div></header><div id="effectList"></div></aside><main id="stage"><div id="previewTools"><span>ドラッグで移動・ホイールで拡大縮小</span><button id="resetRuntimeView">位置・大きさを戻す</button></div><div id="effectTransport"><button id="effectPreview">▶ プレビュー</button><button id="effectStop" disabled>■ 停止</button><span id="effectPreviewStatus" role="status"></span></div></main>
+<aside id="controls" aria-label="演出作成"><div class="controls-header"><h1>演出の設定</h1><p class="tiny">左のリストから演出を選んで編集します。</p></div><section id="avatarEditor"></section></aside>
+<aside id="notice" role="status"><p id="message">キャラクターを準備しています…</p><button id="enableAudio" hidden>音声を有効にする</button></aside>
+<script type="module" src="/web/player.js"></script></body></html>

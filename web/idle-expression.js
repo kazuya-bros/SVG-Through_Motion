@@ -1,4 +1,5 @@
-export const earEnabled=part=>typeof part.earMotion==='boolean'?part.earMotion:(part.role||'').startsWith('ear-');
+import {inferredEar} from './accessory-targets.js';
+export const earEnabled=part=>typeof part.earMotion==='boolean'?part.earMotion:inferredEar(part);
 export function chooseEarLayer(project,target){
  if(target!=='auto'&&target!=='none'&&!project.parts.some(p=>p.id===target))return;
  for(const part of project.parts){if(target==='auto')delete part.earMotion;else part.earMotion=part.id===target;}
