@@ -6,7 +6,7 @@ export function paddedViewport(project,padding=0){
 export const canvasViewport=(canvas,project)=>canvas.viewport||paddedViewport(project);
 export function canvasPoint(canvas,project,x,y){const v=canvasViewport(canvas,project);return [v.x+x*v.width,v.y+y*v.height];}
 export function padMesh(triangles,project,pad){
- if(!pad)return triangles;
+ if(!Array.isArray(triangles)||!triangles.length||!pad)return triangles||[];
  const area=([a,b,c])=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
  const sign=Math.sign(area(triangles[0]))||1,extra=[];
  // Batched clips use the nonzero winding rule; opposite windings would erase
